@@ -97,11 +97,6 @@ npm run build
 
 ---
 
-## 授權
-MIT License
-
----
-
 ## 特別鳴謝
 本專案受到不同 CLI 風格專案、GitHub Desktop、tauri-starter 等開源專案啟發與參考。
 
