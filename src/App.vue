@@ -25,6 +25,7 @@ const showCloneModal = ref(false);
 const cloneUrl = ref("");
 const showSettingsModal = ref(false);
 const showBranchModal = ref(false);
+const showRecentDropdown = ref(false);
 const newBranchName = ref("");
 
 const stagedFiles = computed(() => fileStatuses.value.filter(f => f.staged).map(f => f.path));
@@ -246,19 +247,19 @@ const handleFetch = async () => {
   }
 };
 
-const handleSync = async () => {
-  try {
-    loading.value = true;
-    error.value = null;
-    await gitService.pull();
-    await gitService.push();
-    await refreshRepo();
-    alert("Synced successfully!");
-  } catch (err) {
-    error.value = err as string;
-  } finally {
-    loading.value = false;
-  }
+
+const smartAction = computed(() => {
+  if (!repoInfo.value) return { label: 'FETCH ORIGIN', type: 'fetch' };
+  if (repoInfo.value.behind > 0) return { label: 'PULL FROM ORIGIN', type: 'pull' };
+  if (repoInfo.value.ahead > 0) return { label: 'PUSH TO ORIGIN', type: 'push' };
+  return { label: 'FETCH ORIGIN', type: 'fetch' };
+});
+
+const handleSmartAction = async () => {
+  const action = smartAction.value.type;
+  if (action === 'pull') await handlePull();
+  else if (action === 'push') await handlePush();
+  else await handleFetch();
 };
 
 const handleStashSave = async () => {
@@ -395,10 +396,27 @@ const saveSettings = async () => {
   <div class="app flex flex-col h-screen bg-terminal-bg text-terminal-primary overflow-hidden font-mono">
     <!-- Header/Top Bar -->
     <header class="h-10 border-b border-terminal-border bg-terminal-bg flex items-center px-4 justify-between flex-shrink-0">
-      <div class="flex items-center gap-4 text-xs uppercase">
-        <div class="flex items-center gap-2 cursor-pointer hover:bg-terminal-muted px-2 py-1 border border-transparent hover:border-terminal-border group" @click="handleOpenRepo()" title="Click to switch repository">
+      <div class="flex items-center gap-4 text-xs uppercase relative">
+        <div class="flex items-center gap-2 cursor-pointer hover:bg-terminal-muted px-2 py-1 border border-transparent hover:border-terminal-border group" @click="showRecentDropdown = !showRecentDropdown" title="Click to switch repository">
           <span class="text-terminal-primary">[SWITCH]</span>
           <span class="font-bold truncate max-w-[200px] text-glow">{{ repoInfo ? repoInfo.path.split('/').pop() : 'NO_REPOSITORY' }}</span>
+          <span class="text-[8px] ml-1 opacity-50">▼</span>
+        </div>
+
+        <!-- Recent Projects Dropdown -->
+        <div v-if="showRecentDropdown" class="absolute top-full left-0 mt-1 w-64 bg-black border border-terminal-border z-[60] shadow-xl">
+          <div class="p-2 border-b border-terminal-border bg-terminal-muted text-[10px] text-terminal-muted uppercase">RECENT_PROJECTS</div>
+          <div class="max-h-60 overflow-auto">
+            <div v-for="path in settings?.recent_repositories" :key="path" 
+                 @click="handleOpenRepo(path); showRecentDropdown = false"
+                 class="p-2 hover:bg-terminal-primary hover:text-terminal-bg cursor-pointer text-[10px] truncate border-b border-terminal-border last:border-0">
+              <span class="text-terminal-primary group-hover:text-inherit">></span> {{ path }}
+            </div>
+            <div @click="handleOpenRepo(); showRecentDropdown = false" 
+                 class="p-2 hover:bg-terminal-primary hover:text-terminal-bg cursor-pointer text-[10px] uppercase font-bold">
+              [+] OPEN_NEW_PATH...
+            </div>
+          </div>
         </div>
         <div v-if="repoInfo" class="flex items-center gap-2 cursor-pointer hover:bg-terminal-muted px-2 py-1 border border-transparent hover:border-terminal-border" @click="showBranchModal = true">
           <span>$</span>
@@ -572,16 +590,17 @@ const saveSettings = async () => {
               [ COMMIT TO {{ branches.find((b: BranchInfo) => b.is_current)?.name || 'HEAD' }} ]
             </button>
           </div>
-          <div v-else-if="repoInfo.ahead > 0 || repoInfo.behind > 0" class="space-y-3">
-            <div class="text-[10px] uppercase text-terminal-muted mb-2 text-center">// NO_STAGED_CHANGES</div>
-            <button @click="handleSync" :disabled="loading"
+          <div v-else class="space-y-3">
+            <button @click="handleSmartAction" :disabled="loading"
                     class="w-full bg-terminal-primary text-terminal-bg py-2 border border-terminal-primary font-bold text-xs tracking-wide uppercase hover:bg-terminal-muted hover:text-terminal-primary transition-colors">
-              [ SYNC_CHANGES ({{ repoInfo.ahead }}↑ {{ repoInfo.behind }}↓) ]
+              [ {{ smartAction.label }} ]
             </button>
-            <div class="text-[9px] text-terminal-muted text-center italic">Pull & Push to origin</div>
-          </div>
-          <div v-else class="text-[10px] uppercase text-terminal-muted text-center py-4">
-            // NO_CHANGES_TO_COMMIT
+            <div v-if="repoInfo.ahead > 0 || repoInfo.behind > 0" class="text-[9px] text-terminal-muted text-center italic">
+              {{ repoInfo.ahead }}↑ commits to push, {{ repoInfo.behind }}↓ commits to pull
+            </div>
+            <div v-else class="text-[9px] text-terminal-muted text-center italic uppercase">
+              // REPOSITORY_IS_UP_TO_DATE
+            </div>
           </div>
         </div>
 
