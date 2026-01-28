@@ -240,6 +240,14 @@ fn resolve_conflict(path: String, use_ours: bool, state: State<AppState>) -> Res
     git_operations::resolve_conflict(&repo, &path, use_ours)
 }
 
+#[tauri::command]
+fn set_remote_url(name: String, url: String, state: State<AppState>) -> Result<(), String> {
+    let repo_path = state.current_repo_path.lock().unwrap();
+    let path = repo_path.as_ref().ok_or("No repository open")?;
+    let repo = git_operations::open_repository(path)?;
+    git_operations::set_remote_url(&repo, &name, &url)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -298,6 +306,7 @@ pub fn run() {
             resolve_conflict,
             get_settings,
             save_settings,
+            set_remote_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

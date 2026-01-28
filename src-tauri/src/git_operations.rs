@@ -601,3 +601,9 @@ pub fn fetch_changes(repo: &Repository, ssh_key_path: Option<&str>) -> Result<()
         
     Ok(())
 }
+
+pub fn set_remote_url(repo: &Repository, name: &str, url: &str) -> Result<(), String> {
+    repo.remote_set_url(name, url)
+        .map_err(|e| format!("Failed to set remote URL: {}", e))?;
+    Ok(())
+}

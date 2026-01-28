@@ -145,4 +145,7 @@ export const gitService = {
   async saveSettings(settings: Settings): Promise<void> {
     return await invoke("save_settings", { settings });
   },
+  async setRemoteUrl(name: string, url: string): Promise<void> {
+    return await invoke("set_remote_url", { name, url });
+  },
 };

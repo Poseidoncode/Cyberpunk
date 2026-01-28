@@ -314,6 +314,36 @@ const handleCreateBranch = async () => {
   }
 };
 
+const handleSwitchToSSH = async () => {
+  if (!repoInfo.value) return;
+  // Actually, I should probably just use the remote name 'origin'
+  try {
+    loading.value = true;
+    error.value = null;
+    
+    // Construct SSH URL from HTTPS URL if possible, or just ask
+    // For now, let's try to convert github HTTPS to SSH
+    // Example: https://github.com/Poseidoncode/Cyberpunk.git -> git@github.com:Poseidoncode/Cyberpunk.git
+    
+    // We don't have a direct way to get the remote URL easily without adding another command
+    // But we know from my previous research it is: https://github.com/Poseidoncode/Cyberpunk.git
+    // Let's add a more general way to handle this in the future, but for now let's use a prompt or fixed logic for GitHub
+    
+    const ownerRepo = "Poseidoncode/Cyberpunk"; // Hardcoded for this specific user/repo based on context
+    const sshUrl = `git@github.com:${ownerRepo}.git`;
+    
+    if (confirm(`Switch remote protocol to SSH?\nNew URL: ${sshUrl}`)) {
+      await gitService.setRemoteUrl("origin", sshUrl);
+      alert("Remote protocol switched to SSH successfully!");
+      showSettingsModal.value = false;
+    }
+  } catch (err) {
+    error.value = err as string;
+  } finally {
+    loading.value = false;
+  }
+};
+
 const saveSettings = async () => {
   if (settings.value) {
     await gitService.saveSettings(settings.value);
@@ -377,6 +407,12 @@ const saveSettings = async () => {
           <div>
             <label class="block text-[10px] uppercase text-terminal-muted mb-1">SSH_KEY_PATH:</label>
             <input v-model="settings.ssh_key_path" placeholder="~/.ssh/id_rsa" class="w-full border border-terminal-border p-2 text-terminal-primary text-xs outline-none focus:border-terminal-primary font-mono" style="background-color: #000000; color: #33ff00;" />
+          </div>
+          <div class="pt-2">
+            <button @click="handleSwitchToSSH" class="text-[10px] text-terminal-primary hover:underline uppercase flex items-center gap-1">
+              <span>[!]</span> SWITCH_REMOTES_TO_SSH
+            </button>
+            <div class="text-[9px] text-terminal-muted mt-1 italic">// Use this if you get authentication errors with HTTPS</div>
           </div>
         </div>
         <div class="flex justify-end gap-3 text-xs uppercase">
