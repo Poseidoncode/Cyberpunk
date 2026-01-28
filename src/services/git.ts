@@ -4,6 +4,8 @@ export interface RepositoryInfo {
   path: string;
   current_branch: string;
   is_dirty: boolean;
+  ahead: number;
+  behind: number;
 }
 
 export interface FileStatus {
@@ -49,6 +51,7 @@ export interface Settings {
   user_name: string;
   user_email: string;
   ssh_key_path: string | null;
+  ssh_passphrase: string | null;
   theme: string;
   recent_repositories: string[];
 }

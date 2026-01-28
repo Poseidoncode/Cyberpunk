@@ -5,6 +5,8 @@ pub struct RepositoryInfo {
     pub path: String,
     pub current_branch: String,
     pub is_dirty: bool,
+    pub ahead: usize,
+    pub behind: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -57,6 +59,7 @@ pub struct Settings {
     pub user_name: String,
     pub user_email: String,
     pub ssh_key_path: Option<String>,
+    pub ssh_passphrase: Option<String>,
     pub theme: String,
     pub recent_repositories: Vec<String>,
 }

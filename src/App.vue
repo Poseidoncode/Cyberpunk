@@ -238,7 +238,22 @@ const handleFetch = async () => {
     loading.value = true;
     error.value = null;
     await gitService.fetch();
-    alert("Fetch completed!");
+    await refreshRepo(); // Refresh to update behind count
+  } catch (err) {
+    error.value = err as string;
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleSync = async () => {
+  try {
+    loading.value = true;
+    error.value = null;
+    await gitService.pull();
+    await gitService.push();
+    await refreshRepo();
+    alert("Synced successfully!");
   } catch (err) {
     error.value = err as string;
   } finally {
@@ -364,6 +379,10 @@ const saveSettings = async () => {
         <div v-if="repoInfo" class="flex items-center gap-2 cursor-pointer hover:bg-terminal-muted px-2 py-1 border border-transparent hover:border-terminal-border" @click="showBranchModal = true">
           <span>$</span>
           <span class="font-bold text-glow">{{ branches.find((b: BranchInfo) => b.is_current)?.name || 'UNKNOWN' }}</span>
+          <span v-if="repoInfo.ahead > 0 || repoInfo.behind > 0" class="flex items-center gap-1 border-l border-terminal-border ml-2 pl-2 text-[10px]">
+            <span v-if="repoInfo.ahead > 0" class="text-terminal-primary">{{ repoInfo.ahead }}↑</span>
+            <span v-if="repoInfo.behind > 0" class="text-terminal-secondary">{{ repoInfo.behind }}↓</span>
+          </span>
         </div>
       </div>
       <div class="flex items-center gap-2 text-xs uppercase">
@@ -407,6 +426,11 @@ const saveSettings = async () => {
           <div>
             <label class="block text-[10px] uppercase text-terminal-muted mb-1">SSH_KEY_PATH:</label>
             <input v-model="settings.ssh_key_path" placeholder="~/.ssh/id_rsa" class="w-full border border-terminal-border p-2 text-terminal-primary text-xs outline-none focus:border-terminal-primary font-mono" style="background-color: #000000; color: #33ff00;" />
+          </div>
+          <div>
+            <label class="block text-[10px] uppercase text-terminal-muted mb-1">SSH_PASSPHRASE:</label>
+            <input v-model="settings.ssh_passphrase" type="password" placeholder="Key Passphrase (optional)" class="w-full border border-terminal-border p-2 text-terminal-primary text-xs outline-none focus:border-terminal-primary font-mono" style="background-color: #000000; color: #33ff00;" />
+            <div class="text-[9px] text-terminal-muted mt-1 italic">// Only needed if your key has a password</div>
           </div>
           <div class="pt-2">
             <button @click="handleSwitchToSSH" class="text-[10px] text-terminal-primary hover:underline uppercase flex items-center gap-1">
@@ -507,12 +531,25 @@ const saveSettings = async () => {
         </div>
 
         <div v-if="view === 'changes'" class="p-3 border-t border-terminal-border bg-terminal-bg">
-          <div class="text-[10px] uppercase text-terminal-muted mb-2">COMMIT_MESSAGE:</div>
-          <textarea v-model="commitMessage" placeholder="git commit -m '...'" class="w-full bg-terminal-bg border border-terminal-border p-2 text-terminal-primary text-xs mb-3 focus:border-terminal-primary outline-none resize-none font-mono" rows="3" />
-          <button @click="handleCommit" :disabled="loading || !commitMessage.trim() || stagedFiles.length === 0" 
-                  class="w-full bg-terminal-primary text-terminal-bg disabled:opacity-50 disabled:bg-terminal-muted py-2 border border-terminal-primary font-bold text-xs tracking-wide uppercase hover:bg-terminal-muted hover:text-terminal-primary transition-colors">
-            [ COMMIT TO {{ branches.find((b: BranchInfo) => b.is_current)?.name || 'HEAD' }} ]
-          </button>
+          <div v-if="stagedFiles.length > 0" class="space-y-3">
+            <div class="text-[10px] uppercase text-terminal-muted mb-2">COMMIT_MESSAGE:</div>
+            <textarea v-model="commitMessage" placeholder="git commit -m '...'" class="w-full bg-terminal-bg border border-terminal-border p-2 text-terminal-primary text-xs mb-3 focus:border-terminal-primary outline-none resize-none font-mono" rows="3" />
+            <button @click="handleCommit" :disabled="loading || !commitMessage.trim()" 
+                    class="w-full bg-terminal-primary text-terminal-bg disabled:opacity-50 disabled:bg-terminal-muted py-2 border border-terminal-primary font-bold text-xs tracking-wide uppercase hover:bg-terminal-muted hover:text-terminal-primary transition-colors">
+              [ COMMIT TO {{ branches.find((b: BranchInfo) => b.is_current)?.name || 'HEAD' }} ]
+            </button>
+          </div>
+          <div v-else-if="repoInfo.ahead > 0 || repoInfo.behind > 0" class="space-y-3">
+            <div class="text-[10px] uppercase text-terminal-muted mb-2 text-center">// NO_STAGED_CHANGES</div>
+            <button @click="handleSync" :disabled="loading"
+                    class="w-full bg-terminal-primary text-terminal-bg py-2 border border-terminal-primary font-bold text-xs tracking-wide uppercase hover:bg-terminal-muted hover:text-terminal-primary transition-colors">
+              [ SYNC_CHANGES ({{ repoInfo.ahead }}↑ {{ repoInfo.behind }}↓) ]
+            </button>
+            <div class="text-[9px] text-terminal-muted text-center italic">Pull & Push to origin</div>
+          </div>
+          <div v-else class="text-[10px] uppercase text-terminal-muted text-center py-4">
+            // NO_CHANGES_TO_COMMIT
+          </div>
         </div>
 
         <div class="p-2 border-t border-terminal-border flex gap-2 overflow-x-auto bg-terminal-bg text-[10px] uppercase">

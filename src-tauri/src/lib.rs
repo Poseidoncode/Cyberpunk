@@ -40,7 +40,15 @@ fn save_settings(settings: Settings, state: State<AppState>, app_handle: tauri::
 
 #[tauri::command]
 fn clone_repository(options: CloneOptions, state: State<AppState>, app_handle: tauri::AppHandle) -> Result<String, String> {
-    let repo = git_operations::clone_repository(&options.url, &options.path, state.settings.lock().unwrap().ssh_key_path.as_deref())?;
+    let settings = state.settings.lock().unwrap();
+    let repo = git_operations::clone_repository(
+        &options.url, 
+        &options.path, 
+        settings.ssh_key_path.as_deref(),
+        settings.ssh_passphrase.as_deref()
+    )?;
+    drop(settings);
+    
     let repo_path = repo.path().to_string_lossy().to_string();
     
     *state.current_repo_path.lock().unwrap() = Some(options.path.clone());
@@ -152,7 +160,12 @@ fn push_changes(state: State<AppState>) -> Result<(), String> {
     let path = repo_path.as_ref().ok_or("No repository open")?;
     
     let repo = git_operations::open_repository(path)?;
-    git_operations::push_changes(&repo, state.settings.lock().unwrap().ssh_key_path.as_deref())
+    let settings = state.settings.lock().unwrap();
+    git_operations::push_changes(
+        &repo, 
+        settings.ssh_key_path.as_deref(),
+        settings.ssh_passphrase.as_deref()
+    )
 }
 
 #[tauri::command]
@@ -161,7 +174,12 @@ fn pull_changes(state: State<AppState>) -> Result<(), String> {
     let path = repo_path.as_ref().ok_or("No repository open")?;
     
     let repo = git_operations::open_repository(path)?;
-    git_operations::pull_changes(&repo, state.settings.lock().unwrap().ssh_key_path.as_deref())
+    let settings = state.settings.lock().unwrap();
+    git_operations::pull_changes(
+        &repo, 
+        settings.ssh_key_path.as_deref(),
+        settings.ssh_passphrase.as_deref()
+    )
 }
 
 #[tauri::command]
@@ -170,7 +188,12 @@ fn fetch_changes(state: State<AppState>) -> Result<(), String> {
     let path = repo_path.as_ref().ok_or("No repository open")?;
     
     let repo = git_operations::open_repository(path)?;
-    git_operations::fetch_changes(&repo, state.settings.lock().unwrap().ssh_key_path.as_deref())
+    let settings = state.settings.lock().unwrap();
+    git_operations::fetch_changes(
+        &repo, 
+        settings.ssh_key_path.as_deref(),
+        settings.ssh_passphrase.as_deref()
+    )
 }
 
 #[tauri::command]
@@ -260,17 +283,19 @@ pub fn run() {
             let initial_settings = if config_path.exists() {
                 let content = std::fs::read_to_string(config_path).unwrap_or_default();
                 serde_json::from_str(&content).unwrap_or_else(|_| Settings {
-                    user_name: "User".to_string(),
-                    user_email: "user@example.com".to_string(),
+                    user_name: "".to_string(),
+                    user_email: "".to_string(),
                     ssh_key_path: None,
+                    ssh_passphrase: None,
                     theme: "dark".to_string(),
                     recent_repositories: Vec::new(),
                 })
             } else {
                 Settings {
-                    user_name: "User".to_string(),
-                    user_email: "user@example.com".to_string(),
+                    user_name: "".to_string(),
+                    user_email: "".to_string(),
                     ssh_key_path: None,
+                    ssh_passphrase: None,
                     theme: "dark".to_string(),
                     recent_repositories: Vec::new(),
                 }
