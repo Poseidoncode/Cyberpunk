@@ -1,8 +1,9 @@
 use git2::{
-    BranchType, Cred, DiffOptions, RemoteCallbacks, Repository, Signature, StashFlags,
+    BranchType, DiffOptions, Repository, Signature, StashFlags,
     StatusOptions,
 };
 use std::path::Path;
+use std::process::Command;
 
 use crate::models::{
     BranchInfo, ConflictInfo, CommitInfo, DiffInfo, FileStatus, RepositoryInfo, StashInfo,
@@ -12,33 +13,30 @@ pub fn open_repository(path: &str) -> Result<Repository, String> {
     Repository::open(path).map_err(|e| format!("Failed to open repository: {}", e))
 }
 
-pub fn clone_repository(url: &str, path: &str, ssh_key_path: Option<&str>, ssh_passphrase: Option<&str>) -> Result<Repository, String> {
-    let mut callbacks = RemoteCallbacks::new();
-    let key_path_owned = ssh_key_path.map(|s| s.to_string());
-    let passphrase_owned = ssh_passphrase.map(|s| s.to_string());
-    
-    callbacks.credentials(move |_url, username_from_url, _allowed_types| {
-        let username = username_from_url.unwrap_or("git");
-        if let Some(ref path) = key_path_owned {
-            if let Ok(cred) = Cred::ssh_key(
-                username, 
-                None, 
-                std::path::Path::new(path), 
-                passphrase_owned.as_deref()
-            ) {
-                return Ok(cred);
-            }
-        }
-        Cred::ssh_key_from_agent(username)
-    });
+fn run_git_command(args: Vec<&str>, cwd: Option<&str>) -> Result<String, String> {
+    let mut command = Command::new("git");
+    command.args(&args);
+    if let Some(path) = cwd {
+        command.current_dir(path);
+    }
 
-    let mut fetch_opts = git2::FetchOptions::new();
-    fetch_opts.remote_callbacks(callbacks);
+    let output = command.output().map_err(|e| format!("Failed to execute git command: {}", e))?;
 
-    let mut builder = git2::build::RepoBuilder::new();
-    builder.fetch_options(fetch_opts);
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(if stderr.is_empty() {
+            format!("Git command failed with status: {}", output.status)
+        } else {
+            stderr
+        })
+    }
+}
 
-    builder.clone(url, Path::new(path)).map_err(|e| format!("Failed to clone repository: {}", e))
+pub fn clone_repository(url: &str, path: &str, _ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<Repository, String> {
+    run_git_command(vec!["clone", url, path], None)?;
+    open_repository(path)
 }
 
 pub fn get_repository_info(repo: &Repository) -> Result<RepositoryInfo, String> {
@@ -429,110 +427,17 @@ pub fn get_diff(repo: &Repository, path: Option<&str>) -> Result<Vec<DiffInfo>, 
     Ok(diff_infos)
 }
 
-pub fn push_changes(repo: &Repository, ssh_key_path: Option<&str>, ssh_passphrase: Option<&str>) -> Result<(), String> {
-    let mut remote = repo
-        .find_remote("origin")
-        .map_err(|e| format!("Failed to find remote: {}", e))?;
-
-    let head = repo
-        .head()
-        .map_err(|e| format!("Failed to get HEAD: {}", e))?;
+pub fn push_changes(repo: &Repository, _ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
+    let path = repo.workdir().ok_or("No working directory found")?.to_str().ok_or("Invalid path")?;
     
-    let branch_name = head.shorthand().unwrap_or("main");
-    let refspec = format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name);
-
-    let mut callbacks = RemoteCallbacks::new();
-    let key_path_owned = ssh_key_path.map(|s| s.to_string());
-    let passphrase_owned = ssh_passphrase.map(|s| s.to_string());
-
-    callbacks.credentials(move |_url, username_from_url, _allowed_types| {
-        let username = username_from_url.unwrap_or("git");
-        if let Some(ref path) = key_path_owned {
-            if let Ok(cred) = Cred::ssh_key(
-                username, 
-                None, 
-                std::path::Path::new(path), 
-                passphrase_owned.as_deref()
-            ) {
-                return Ok(cred);
-            }
-        }
-        Cred::ssh_key_from_agent(username)
-    });
-
-    let mut push_opts = git2::PushOptions::new();
-    push_opts.remote_callbacks(callbacks);
-
-    remote
-        .push(&[&refspec], Some(&mut push_opts))
-        .map_err(|e| format!("Failed to push: {}", e))?;
-
+    run_git_command(vec!["push", "origin", "HEAD"], Some(path))?;
     Ok(())
 }
 
-pub fn pull_changes(repo: &Repository, ssh_key_path: Option<&str>, ssh_passphrase: Option<&str>) -> Result<(), String> {
-    let mut remote = repo
-        .find_remote("origin")
-        .map_err(|e| format!("Failed to find remote: {}", e))?;
-
-    let mut callbacks = RemoteCallbacks::new();
-    let key_path_owned = ssh_key_path.map(|s| s.to_string());
-    let passphrase_owned = ssh_passphrase.map(|s| s.to_string());
-
-    callbacks.credentials(move |_url, username_from_url, _allowed_types| {
-        let username = username_from_url.unwrap_or("git");
-        if let Some(ref path) = key_path_owned {
-            if let Ok(cred) = Cred::ssh_key(
-                username, 
-                None, 
-                std::path::Path::new(path), 
-                passphrase_owned.as_deref()
-            ) {
-                return Ok(cred);
-            }
-        }
-        Cred::ssh_key_from_agent(username)
-    });
-
-    let mut fetch_opts = git2::FetchOptions::new();
-    fetch_opts.remote_callbacks(callbacks);
-
-    remote
-        .fetch(&["main"], Some(&mut fetch_opts), None)
-        .map_err(|e| format!("Failed to fetch: {}", e))?;
-
-    // Simple fast-forward merge
-    let fetch_head = repo
-        .find_reference("FETCH_HEAD")
-        .map_err(|e| format!("Failed to find FETCH_HEAD: {}", e))?;
+pub fn pull_changes(repo: &Repository, _ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
+    let path = repo.workdir().ok_or("No working directory found")?.to_str().ok_or("Invalid path")?;
     
-    let fetch_commit = repo
-        .reference_to_annotated_commit(&fetch_head)
-        .map_err(|e| format!("Failed to get fetch commit: {}", e))?;
-
-    let analysis = repo
-        .merge_analysis(&[&fetch_commit])
-        .map_err(|e| format!("Failed to analyze merge: {}", e))?;
-
-    if analysis.0.is_up_to_date() {
-        return Ok(());
-    } else if analysis.0.is_fast_forward() {
-        let refname = "refs/heads/main";
-        let mut reference = repo
-            .find_reference(refname)
-            .map_err(|e| format!("Failed to find reference: {}", e))?;
-        
-        reference
-            .set_target(fetch_commit.id(), "Fast-forward")
-            .map_err(|e| format!("Failed to set target: {}", e))?;
-        
-        repo.set_head(refname)
-            .map_err(|e| format!("Failed to set HEAD: {}", e))?;
-        
-        repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))
-            .map_err(|e| format!("Failed to checkout: {}", e))?;
-    }
-
+    run_git_command(vec!["pull", "origin", "HEAD"], Some(path))?;
     Ok(())
 }
 
@@ -603,48 +508,13 @@ pub fn resolve_conflict(repo: &Repository, path: &str, _use_ours: bool) -> Resul
 }
 
 #[allow(dead_code)]
-pub fn create_remote_callbacks() -> RemoteCallbacks<'static> {
-    let mut callbacks = RemoteCallbacks::new();
-    callbacks.credentials(|_url, username_from_url, _allowed_types| {
-        Cred::ssh_key(
-            username_from_url.unwrap_or("git"),
-            None,
-            std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap())),
-            None,
-        )
-    });
-    callbacks
+pub fn create_remote_callbacks() -> () {
+    // Deprecated
 }
-pub fn fetch_changes(repo: &Repository, ssh_key_path: Option<&str>, ssh_passphrase: Option<&str>) -> Result<(), String> {
-    let mut remote = repo
-        .find_remote("origin")
-        .map_err(|e| format!("Failed to find remote: {}", e))?;
-
-    let mut callbacks = RemoteCallbacks::new();
-    let key_path_owned = ssh_key_path.map(|s| s.to_string());
-    let passphrase_owned = ssh_passphrase.map(|s| s.to_string());
-
-    callbacks.credentials(move |_url, username_from_url, _allowed_types| {
-        let username = username_from_url.unwrap_or("git");
-        if let Some(ref path) = key_path_owned {
-            if let Ok(cred) = Cred::ssh_key(
-                username, 
-                None, 
-                std::path::Path::new(path), 
-                passphrase_owned.as_deref()
-            ) {
-                return Ok(cred);
-            }
-        }
-        Cred::ssh_key_from_agent(username)
-    });
-
-    let mut fetch_opts = git2::FetchOptions::new();
-    fetch_opts.remote_callbacks(callbacks);
-
-    remote.fetch(&["main"], Some(&mut fetch_opts), None)
-        .map_err(|e| format!("Failed to fetch: {}", e))?;
-        
+pub fn fetch_changes(repo: &Repository, _ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
+    let path = repo.workdir().ok_or("No working directory found")?.to_str().ok_or("Invalid path")?;
+    
+    run_git_command(vec!["fetch", "origin"], Some(path))?;
     Ok(())
 }
 
