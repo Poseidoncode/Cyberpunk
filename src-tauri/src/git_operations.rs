@@ -13,11 +13,14 @@ pub fn open_repository(path: &str) -> Result<Repository, String> {
     Repository::open(path).map_err(|e| format!("Failed to open repository: {}", e))
 }
 
-fn run_git_command(args: Vec<&str>, cwd: Option<&str>) -> Result<String, String> {
+fn run_git_command(args: Vec<&str>, cwd: Option<&str>, envs: Vec<(&str, String)>) -> Result<String, String> {
     let mut command = Command::new("git");
     command.args(&args);
     if let Some(path) = cwd {
         command.current_dir(path);
+    }
+    for (key, val) in envs {
+        command.env(key, val);
     }
 
     let output = command.output().map_err(|e| format!("Failed to execute git command: {}", e))?;
@@ -34,8 +37,19 @@ fn run_git_command(args: Vec<&str>, cwd: Option<&str>) -> Result<String, String>
     }
 }
 
-pub fn clone_repository(url: &str, path: &str, _ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<Repository, String> {
-    run_git_command(vec!["clone", url, path], None)?;
+pub fn clone_repository(url: &str, path: &str, ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<Repository, String> {
+    let mut envs = Vec::new();
+    if let Some(key) = ssh_key_path {
+        if !key.trim().is_empty() {
+            let expanded_path = if key.starts_with("~/") {
+                key.replacen("~", &std::env::var("HOME").unwrap_or_default(), 1)
+            } else {
+                key.to_string()
+            };
+            envs.push(("GIT_SSH_COMMAND", format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path)));
+        }
+    }
+    run_git_command(vec!["clone", url, path], None, envs)?;
     open_repository(path)
 }
 
@@ -427,17 +441,39 @@ pub fn get_diff(repo: &Repository, path: Option<&str>) -> Result<Vec<DiffInfo>, 
     Ok(diff_infos)
 }
 
-pub fn push_changes(repo: &Repository, _ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
+pub fn push_changes(repo: &Repository, ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
     let path = repo.workdir().ok_or("No working directory found")?.to_str().ok_or("Invalid path")?;
+    let mut envs = Vec::new();
+    if let Some(key) = ssh_key_path {
+        if !key.trim().is_empty() {
+            let expanded_path = if key.starts_with("~/") {
+                key.replacen("~", &std::env::var("HOME").unwrap_or_default(), 1)
+            } else {
+                key.to_string()
+            };
+            envs.push(("GIT_SSH_COMMAND", format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path)));
+        }
+    }
     
-    run_git_command(vec!["push", "origin", "HEAD"], Some(path))?;
+    run_git_command(vec!["push", "origin", "HEAD"], Some(path), envs)?;
     Ok(())
 }
 
-pub fn pull_changes(repo: &Repository, _ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
+pub fn pull_changes(repo: &Repository, ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
     let path = repo.workdir().ok_or("No working directory found")?.to_str().ok_or("Invalid path")?;
+    let mut envs = Vec::new();
+    if let Some(key) = ssh_key_path {
+        if !key.trim().is_empty() {
+            let expanded_path = if key.starts_with("~/") {
+                key.replacen("~", &std::env::var("HOME").unwrap_or_default(), 1)
+            } else {
+                key.to_string()
+            };
+            envs.push(("GIT_SSH_COMMAND", format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path)));
+        }
+    }
     
-    run_git_command(vec!["pull", "origin", "HEAD"], Some(path))?;
+    run_git_command(vec!["pull", "origin", "HEAD"], Some(path), envs)?;
     Ok(())
 }
 
@@ -511,11 +547,27 @@ pub fn resolve_conflict(repo: &Repository, path: &str, _use_ours: bool) -> Resul
 pub fn create_remote_callbacks() -> () {
     // Deprecated
 }
-pub fn fetch_changes(repo: &Repository, _ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
+pub fn fetch_changes(repo: &Repository, ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
     let path = repo.workdir().ok_or("No working directory found")?.to_str().ok_or("Invalid path")?;
+    let mut envs = Vec::new();
+    if let Some(key) = ssh_key_path {
+        if !key.trim().is_empty() {
+            let expanded_path = if key.starts_with("~/") {
+                key.replacen("~", &std::env::var("HOME").unwrap_or_default(), 1)
+            } else {
+                key.to_string()
+            };
+            envs.push(("GIT_SSH_COMMAND", format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path)));
+        }
+    }
     
-    run_git_command(vec!["fetch", "origin"], Some(path))?;
+    run_git_command(vec!["fetch", "origin"], Some(path), envs)?;
     Ok(())
+}
+
+pub fn get_remote_url(repo: &Repository, name: &str) -> Result<String, String> {
+    let remote = repo.find_remote(name).map_err(|e| format!("Failed to find remote: {}", e))?;
+    Ok(remote.url().unwrap_or("").to_string())
 }
 
 pub fn set_remote_url(repo: &Repository, name: &str, url: &str) -> Result<(), String> {

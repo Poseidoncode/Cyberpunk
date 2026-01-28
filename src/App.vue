@@ -329,33 +329,57 @@ const handleCreateBranch = async () => {
   }
 };
 
-const handleSwitchToSSH = async () => {
+const handleSwitchProtocol = async (protocol: 'ssh' | 'https') => {
   if (!repoInfo.value) return;
-  // Actually, I should probably just use the remote name 'origin'
   try {
     loading.value = true;
     error.value = null;
     
-    // Construct SSH URL from HTTPS URL if possible, or just ask
-    // For now, let's try to convert github HTTPS to SSH
-    // Example: https://github.com/Poseidoncode/Cyberpunk.git -> git@github.com:Poseidoncode/Cyberpunk.git
+    const currentUrl = await gitService.getRemoteUrl("origin");
+    let newUrl = currentUrl;
+
+    if (protocol === 'ssh') {
+      // https://github.com/owner/repo.git -> git@github.com:owner/repo.git
+      if (currentUrl.startsWith("https://github.com/")) {
+        newUrl = currentUrl.replace("https://github.com/", "git@github.com:").replace(".git", "") + ".git";
+      } else if (currentUrl.startsWith("git@github.com:")) {
+        alert("Already using SSH");
+        return;
+      }
+    } else {
+      // git@github.com:owner/repo.git -> https://github.com/owner/repo.git
+      if (currentUrl.startsWith("git@github.com:")) {
+        newUrl = currentUrl.replace("git@github.com:", "https://github.com/").replace(".git", "") + ".git";
+      } else if (currentUrl.startsWith("https://github.com/")) {
+        alert("Already using HTTPS");
+        return;
+      }
+    }
     
-    // We don't have a direct way to get the remote URL easily without adding another command
-    // But we know from my previous research it is: https://github.com/Poseidoncode/Cyberpunk.git
-    // Let's add a more general way to handle this in the future, but for now let's use a prompt or fixed logic for GitHub
-    
-    const ownerRepo = "Poseidoncode/Cyberpunk"; // Hardcoded for this specific user/repo based on context
-    const sshUrl = `git@github.com:${ownerRepo}.git`;
-    
-    if (confirm(`Switch remote protocol to SSH?\nNew URL: ${sshUrl}`)) {
-      await gitService.setRemoteUrl("origin", sshUrl);
-      alert("Remote protocol switched to SSH successfully!");
+    if (newUrl !== currentUrl && confirm(`Switch remote protocol to ${protocol.toUpperCase()}?\nNew URL: ${newUrl}`)) {
+      await gitService.setRemoteUrl("origin", newUrl);
+      alert(`Switched to ${protocol.toUpperCase()} successfully!`);
       showSettingsModal.value = false;
     }
   } catch (err) {
     error.value = err as string;
   } finally {
     loading.value = false;
+  }
+};
+
+const handleBrowseSSHKey = async () => {
+  try {
+    const selected = await open({
+      multiple: false,
+      title: "Select Private SSH Key",
+      directory: false,
+    });
+    if (selected && typeof selected === "string" && settings.value) {
+      settings.value.ssh_key_path = selected;
+    }
+  } catch (err) {
+    console.error("Failed to browse SSH key", err);
   }
 };
 
@@ -425,18 +449,27 @@ const saveSettings = async () => {
           </div>
           <div>
             <label class="block text-[10px] uppercase text-terminal-muted mb-1">SSH_KEY_PATH:</label>
-            <input v-model="settings.ssh_key_path" placeholder="~/.ssh/id_rsa" class="w-full border border-terminal-border p-2 text-terminal-primary text-xs outline-none focus:border-terminal-primary font-mono" style="background-color: #000000; color: #33ff00;" />
+            <div class="flex gap-2">
+              <input v-model="settings.ssh_key_path" placeholder="~/.ssh/id_rsa" class="flex-1 border border-terminal-border p-2 text-terminal-primary text-xs outline-none focus:border-terminal-primary font-mono" style="background-color: #000000; color: #33ff00;" />
+              <button @click="handleBrowseSSHKey" class="bg-terminal-bg border border-terminal-border hover:bg-terminal-muted px-3 py-1 text-[10px] uppercase">[ BROWSE ]</button>
+            </div>
           </div>
           <div>
             <label class="block text-[10px] uppercase text-terminal-muted mb-1">SSH_PASSPHRASE:</label>
             <input v-model="settings.ssh_passphrase" type="password" placeholder="Key Passphrase (optional)" class="w-full border border-terminal-border p-2 text-terminal-primary text-xs outline-none focus:border-terminal-primary font-mono" style="background-color: #000000; color: #33ff00;" />
             <div class="text-[9px] text-terminal-muted mt-1 italic">// Only needed if your key has a password</div>
           </div>
-          <div class="pt-2">
-            <button @click="handleSwitchToSSH" class="text-[10px] text-terminal-primary hover:underline uppercase flex items-center gap-1">
-              <span>[!]</span> SWITCH_REMOTES_TO_SSH
-            </button>
-            <div class="text-[9px] text-terminal-muted mt-1 italic">// Use this if you get authentication errors with HTTPS</div>
+          <div class="pt-2 border-t border-terminal-border mt-4">
+            <div class="text-[10px] uppercase text-terminal-muted mb-2 font-bold">Protocol Switching:</div>
+            <div class="flex gap-4">
+              <button @click="handleSwitchProtocol('ssh')" class="text-[10px] text-terminal-primary hover:underline uppercase flex items-center gap-1">
+                <span>[!]</span> USE_SSH
+              </button>
+              <button @click="handleSwitchProtocol('https')" class="text-[10px] text-terminal-secondary hover:underline uppercase flex items-center gap-1">
+                <span>[!]</span> USE_HTTPS
+              </button>
+            </div>
+            <div class="text-[9px] text-terminal-muted mt-2 italic">// HTTPS is easier if you don't use SSH keys</div>
           </div>
         </div>
         <div class="flex justify-end gap-3 text-xs uppercase">

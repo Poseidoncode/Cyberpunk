@@ -151,4 +151,7 @@ export const gitService = {
   async setRemoteUrl(name: string, url: string): Promise<void> {
     return await invoke("set_remote_url", { name, url });
   },
+  async getRemoteUrl(name: string): Promise<string> {
+    return await invoke("get_remote_url", { name });
+  },
 };
