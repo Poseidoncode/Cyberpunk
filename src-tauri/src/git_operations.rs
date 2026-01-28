@@ -90,8 +90,10 @@ pub fn get_repository_info(repo: &Repository) -> Result<RepositoryInfo, String> 
     
     let is_dirty = !statuses.is_empty();
 
+    let path = repo.workdir().unwrap_or_else(|| repo.path()).to_string_lossy().to_string();
+
     Ok(RepositoryInfo {
-        path: repo.path().to_string_lossy().to_string(),
+        path,
         current_branch,
         is_dirty,
         ahead,
