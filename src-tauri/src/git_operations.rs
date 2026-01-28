@@ -14,17 +14,17 @@ pub fn open_repository(path: &str) -> Result<Repository, String> {
 
 pub fn clone_repository(url: &str, path: &str, ssh_key_path: Option<&str>) -> Result<Repository, String> {
     let mut callbacks = RemoteCallbacks::new();
-    if let Some(key_path) = ssh_key_path {
-        let key_path_owned = key_path.to_string();
-        callbacks.credentials(move |_url, username_from_url, _allowed_types| {
-            Cred::ssh_key(
-                username_from_url.unwrap_or("git"),
-                None,
-                std::path::Path::new(&key_path_owned),
-                None,
-            )
-        });
-    }
+    let key_path_owned = ssh_key_path.map(|s| s.to_string());
+    
+    callbacks.credentials(move |_url, username_from_url, _allowed_types| {
+        let username = username_from_url.unwrap_or("git");
+        if let Some(ref path) = key_path_owned {
+            if let Ok(cred) = Cred::ssh_key(username, None, std::path::Path::new(path), None) {
+                return Ok(cred);
+            }
+        }
+        Cred::ssh_key_from_agent(username)
+    });
 
     let mut fetch_opts = git2::FetchOptions::new();
     fetch_opts.remote_callbacks(callbacks);
@@ -414,17 +414,17 @@ pub fn push_changes(repo: &Repository, ssh_key_path: Option<&str>) -> Result<(),
     let refspec = format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name);
 
     let mut callbacks = RemoteCallbacks::new();
-    if let Some(key_path) = ssh_key_path {
-        let key_path_owned = key_path.to_string();
-        callbacks.credentials(move |_url, username_from_url, _allowed_types| {
-            Cred::ssh_key(
-                username_from_url.unwrap_or("git"),
-                None,
-                std::path::Path::new(&key_path_owned),
-                None,
-            )
-        });
-    }
+    let key_path_owned = ssh_key_path.map(|s| s.to_string());
+
+    callbacks.credentials(move |_url, username_from_url, _allowed_types| {
+        let username = username_from_url.unwrap_or("git");
+        if let Some(ref path) = key_path_owned {
+            if let Ok(cred) = Cred::ssh_key(username, None, std::path::Path::new(path), None) {
+                return Ok(cred);
+            }
+        }
+        Cred::ssh_key_from_agent(username)
+    });
 
     let mut push_opts = git2::PushOptions::new();
     push_opts.remote_callbacks(callbacks);
