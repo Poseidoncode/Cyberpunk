@@ -327,8 +327,8 @@ const saveSettings = async () => {
     <!-- Header/Top Bar -->
     <header class="h-10 border-b border-terminal-border bg-terminal-bg flex items-center px-4 justify-between flex-shrink-0">
       <div class="flex items-center gap-4 text-xs uppercase">
-        <div class="flex items-center gap-2 cursor-pointer hover:bg-terminal-muted px-2 py-1 border border-transparent hover:border-terminal-border" @click="handleOpenRepo()">
-          <span>></span>
+        <div class="flex items-center gap-2 cursor-pointer hover:bg-terminal-muted px-2 py-1 border border-transparent hover:border-terminal-border group" @click="handleOpenRepo()" title="Click to switch repository">
+          <span class="text-terminal-primary">[SWITCH]</span>
           <span class="font-bold truncate max-w-[200px] text-glow">{{ repoInfo ? repoInfo.path.split('/').pop() : 'NO_REPOSITORY' }}</span>
         </div>
         <div v-if="repoInfo" class="flex items-center gap-2 cursor-pointer hover:bg-terminal-muted px-2 py-1 border border-transparent hover:border-terminal-border" @click="showBranchModal = true">
@@ -365,11 +365,13 @@ const saveSettings = async () => {
         <div class="border-b border-terminal-border pb-2 mb-6 text-xs uppercase text-glow">+--- CONFIGURATION ---+</div>
         <div class="space-y-4 mb-8">
           <div>
-            <label class="block text-[10px] uppercase text-terminal-muted mb-1">USER_NAME:</label>
+            <label class="block text-[10px] uppercase text-terminal-muted mb-1">GIT_USER_NAME:</label>
+            <div class="text-[9px] text-terminal-muted mb-1 italic">// Identifies you as the author of commits</div>
             <input v-model="settings.user_name" class="w-full border border-terminal-border p-2 text-terminal-primary text-xs outline-none focus:border-terminal-primary font-mono" style="background-color: #000000; color: #33ff00;" />
           </div>
           <div>
-            <label class="block text-[10px] uppercase text-terminal-muted mb-1">USER_EMAIL:</label>
+            <label class="block text-[10px] uppercase text-terminal-muted mb-1">GIT_USER_EMAIL:</label>
+            <div class="text-[9px] text-terminal-muted mb-1 italic">// Email address associated with your commits</div>
             <input v-model="settings.user_email" class="w-full border border-terminal-border p-2 text-terminal-primary text-xs outline-none focus:border-terminal-primary font-mono" style="background-color: #000000; color: #33ff00;" />
           </div>
           <div>
