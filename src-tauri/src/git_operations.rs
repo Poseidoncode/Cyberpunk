@@ -1,19 +1,20 @@
-use git2::{
-    BranchType, DiffOptions, Repository, Signature, StashFlags,
-    StatusOptions,
-};
+use git2::{BranchType, DiffOptions, Repository, Signature, StashFlags, StatusOptions};
 use std::path::Path;
 use std::process::Command;
 
 use crate::models::{
-    BranchInfo, ConflictInfo, CommitInfo, DiffInfo, FileStatus, RepositoryInfo, StashInfo,
+    BranchInfo, CommitInfo, ConflictInfo, DiffInfo, FileStatus, RepositoryInfo, StashInfo,
 };
 
 pub fn open_repository(path: &str) -> Result<Repository, String> {
     Repository::open(path).map_err(|e| format!("Failed to open repository: {}", e))
 }
 
-fn run_git_command(args: Vec<&str>, cwd: Option<&str>, envs: Vec<(&str, String)>) -> Result<String, String> {
+fn run_git_command(
+    args: Vec<&str>,
+    cwd: Option<&str>,
+    envs: Vec<(&str, String)>,
+) -> Result<String, String> {
     let mut command = Command::new("git");
     command.args(&args);
     if let Some(path) = cwd {
@@ -23,7 +24,9 @@ fn run_git_command(args: Vec<&str>, cwd: Option<&str>, envs: Vec<(&str, String)>
         command.env(key, val);
     }
 
-    let output = command.output().map_err(|e| format!("Failed to execute git command: {}", e))?;
+    let output = command
+        .output()
+        .map_err(|e| format!("Failed to execute git command: {}", e))?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -37,7 +40,12 @@ fn run_git_command(args: Vec<&str>, cwd: Option<&str>, envs: Vec<(&str, String)>
     }
 }
 
-pub fn clone_repository(url: &str, path: &str, ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<Repository, String> {
+pub fn clone_repository(
+    url: &str,
+    path: &str,
+    ssh_key_path: Option<&str>,
+    _ssh_passphrase: Option<&str>,
+) -> Result<Repository, String> {
     let mut envs = Vec::new();
     if let Some(key) = ssh_key_path {
         if !key.trim().is_empty() {
@@ -46,7 +54,10 @@ pub fn clone_repository(url: &str, path: &str, ssh_key_path: Option<&str>, _ssh_
             } else {
                 key.to_string()
             };
-            envs.push(("GIT_SSH_COMMAND", format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path)));
+            envs.push((
+                "GIT_SSH_COMMAND",
+                format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path),
+            ));
         }
     }
     run_git_command(vec!["clone", url, path], None, envs)?;
@@ -57,7 +68,7 @@ pub fn get_repository_info(repo: &Repository) -> Result<RepositoryInfo, String> 
     let head = repo
         .head()
         .map_err(|e| format!("Failed to get HEAD: {}", e))?;
-    
+
     let current_branch = if head.is_branch() {
         head.shorthand().unwrap_or("unknown").to_string()
     } else {
@@ -71,11 +82,11 @@ pub fn get_repository_info(repo: &Repository) -> Result<RepositoryInfo, String> 
         let local_name = head.name().unwrap();
         if let Ok(upstream) = repo.branch_upstream_name(local_name) {
             let upstream_name = upstream.as_str().unwrap();
-            
+
             let local_oid = head.target().unwrap();
             if let Ok(upstream_ref) = repo.find_reference(upstream_name) {
                 let upstream_oid = upstream_ref.target().unwrap();
-                
+
                 if let Ok((a, b)) = repo.graph_ahead_behind(local_oid, upstream_oid) {
                     ahead = a;
                     behind = b;
@@ -87,10 +98,14 @@ pub fn get_repository_info(repo: &Repository) -> Result<RepositoryInfo, String> 
     let statuses = repo
         .statuses(None)
         .map_err(|e| format!("Failed to get statuses: {}", e))?;
-    
+
     let is_dirty = !statuses.is_empty();
 
-    let path = repo.workdir().unwrap_or_else(|| repo.path()).to_string_lossy().to_string();
+    let path = repo
+        .workdir()
+        .unwrap_or_else(|| repo.path())
+        .to_string_lossy()
+        .to_string();
 
     Ok(RepositoryInfo {
         path,
@@ -116,25 +131,27 @@ pub fn get_status(repo: &Repository) -> Result<Vec<FileStatus>, String> {
         let status = entry.status();
         let path = entry.path().unwrap_or("unknown").to_string();
 
-        let status_str = if status.is_index_new() || status.is_index_modified() || status.is_index_deleted() {
-            if status.is_index_new() {
-                "added"
-            } else if status.is_index_modified() {
+        let status_str =
+            if status.is_index_new() || status.is_index_modified() || status.is_index_deleted() {
+                if status.is_index_new() {
+                    "added"
+                } else if status.is_index_modified() {
+                    "modified"
+                } else {
+                    "deleted"
+                }
+            } else if status.is_wt_new() {
+                "untracked"
+            } else if status.is_wt_modified() {
                 "modified"
-            } else {
+            } else if status.is_wt_deleted() {
                 "deleted"
-            }
-        } else if status.is_wt_new() {
-            "untracked"
-        } else if status.is_wt_modified() {
-            "modified"
-        } else if status.is_wt_deleted() {
-            "deleted"
-        } else {
-            "unknown"
-        };
+            } else {
+                "unknown"
+            };
 
-        let staged = status.is_index_new() || status.is_index_modified() || status.is_index_deleted();
+        let staged =
+            status.is_index_new() || status.is_index_modified() || status.is_index_deleted();
 
         file_statuses.push(FileStatus {
             path,
@@ -167,17 +184,21 @@ pub fn stage_files(repo: &Repository, paths: Vec<String>) -> Result<(), String> 
 pub fn unstage_files(repo: &Repository, paths: Vec<String>) -> Result<(), String> {
     let head = repo.head().ok();
     let commit = head.and_then(|h| h.peel_to_commit().ok());
-    
+
     if let Some(c) = commit {
         repo.reset_default(Some(c.as_object()), paths.iter().map(|s| s.as_str()))
             .map_err(|e| format!("Failed to unstage: {}", e))?;
     } else {
         // No commits yet, just remove from index
-        let mut index = repo.index().map_err(|e| format!("Failed to get index: {}", e))?;
+        let mut index = repo
+            .index()
+            .map_err(|e| format!("Failed to get index: {}", e))?;
         for path in paths {
             index.remove_path(Path::new(&path)).ok();
         }
-        index.write().map_err(|e| format!("Failed to write index: {}", e))?;
+        index
+            .write()
+            .map_err(|e| format!("Failed to write index: {}", e))?;
     }
 
     Ok(())
@@ -186,25 +207,29 @@ pub fn unstage_files(repo: &Repository, paths: Vec<String>) -> Result<(), String
 pub fn discard_changes(repo: &Repository, path: &str) -> Result<(), String> {
     let mut checkout_opts = git2::build::CheckoutBuilder::new();
     checkout_opts.force().path(path);
-    
+
     // Attempt checkout from HEAD
     if repo.checkout_head(Some(&mut checkout_opts)).is_err() {
         // If checkout head fails (e.g. untracked file), try to remove it
         let full_path = repo.workdir().ok_or("No workdir")?.join(path);
         if full_path.exists() {
             if full_path.is_file() {
-                std::fs::remove_file(full_path).map_err(|e| format!("Failed to delete file: {}", e))?;
+                std::fs::remove_file(full_path)
+                    .map_err(|e| format!("Failed to delete file: {}", e))?;
             } else if full_path.is_dir() {
-                std::fs::remove_dir_all(full_path).map_err(|e| format!("Failed to delete dir: {}", e))?;
+                std::fs::remove_dir_all(full_path)
+                    .map_err(|e| format!("Failed to delete dir: {}", e))?;
             }
         }
     }
-    
+
     Ok(())
 }
 
 pub fn create_branch(repo: &Repository, name: &str) -> Result<(), String> {
-    let head = repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
+    let head = repo
+        .head()
+        .map_err(|e| format!("Failed to get HEAD: {}", e))?;
     let commit = head
         .peel_to_commit()
         .map_err(|e| format!("Failed to peel HEAD to commit: {}", e))?;
@@ -220,7 +245,9 @@ pub fn get_commit_diff(repo: &Repository, sha: &str) -> Result<Vec<DiffInfo>, St
         .find_commit(git2::Oid::from_str(sha).map_err(|e| e.to_string())?)
         .map_err(|e| format!("Commit not found: {}", e))?;
 
-    let tree = commit.tree().map_err(|e| format!("Failed to get tree: {}", e))?;
+    let tree = commit
+        .tree()
+        .map_err(|e| format!("Failed to get tree: {}", e))?;
     let parent_tree = if commit.parent_count() > 0 {
         Some(
             commit
@@ -255,8 +282,12 @@ pub fn get_commit_diff(repo: &Repository, sha: &str) -> Result<Vec<DiffInfo>, St
             _ => "",
         };
 
-        if let Some(info) = diff_infos.iter_mut().find(|i: &&mut DiffInfo| i.path == path) {
-            info.diff_text.push_str(&format!("{}{}", prefix, line_content));
+        if let Some(info) = diff_infos
+            .iter_mut()
+            .find(|i: &&mut DiffInfo| i.path == path)
+        {
+            info.diff_text
+                .push_str(&format!("{}{}", prefix, line_content));
             match line.origin() {
                 '+' => info.additions += 1,
                 '-' => info.deletions += 1,
@@ -281,11 +312,11 @@ pub fn create_commit(repo: &Repository, message: &str) -> Result<String, String>
     let mut index = repo
         .index()
         .map_err(|e| format!("Failed to get index: {}", e))?;
-    
+
     let tree_id = index
         .write_tree()
         .map_err(|e| format!("Failed to write tree: {}", e))?;
-    
+
     let tree = repo
         .find_tree(tree_id)
         .map_err(|e| format!("Failed to find tree: {}", e))?;
@@ -296,9 +327,7 @@ pub fn create_commit(repo: &Repository, message: &str) -> Result<String, String>
         .map_err(|e| format!("Failed to create signature: {}", e))?;
 
     let head = repo.head().ok();
-    let parent_commit = head
-        .as_ref()
-        .and_then(|h| h.peel_to_commit().ok());
+    let parent_commit = head.as_ref().and_then(|h| h.peel_to_commit().ok());
 
     let parents = if let Some(ref parent) = parent_commit {
         vec![parent]
@@ -354,7 +383,6 @@ pub fn get_branches(repo: &Repository) -> Result<Vec<BranchInfo>, String> {
     Ok(branch_list)
 }
 
-
 pub fn checkout_branch(repo: &Repository, name: &str) -> Result<(), String> {
     let obj = repo
         .revparse_single(&format!("refs/heads/{}", name))
@@ -403,10 +431,7 @@ pub fn get_commit_history(repo: &Repository, limit: usize) -> Result<Vec<CommitI
 }
 
 pub fn get_diff(repo: &Repository, path: Option<&str>) -> Result<Vec<DiffInfo>, String> {
-    let head_tree = repo
-        .head()
-        .ok()
-        .and_then(|h| h.peel_to_tree().ok());
+    let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
 
     let mut opts = DiffOptions::new();
     if let Some(p) = path {
@@ -443,8 +468,16 @@ pub fn get_diff(repo: &Repository, path: Option<&str>) -> Result<Vec<DiffInfo>, 
     Ok(diff_infos)
 }
 
-pub fn push_changes(repo: &Repository, ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
-    let path = repo.workdir().ok_or("No working directory found")?.to_str().ok_or("Invalid path")?;
+pub fn push_changes(
+    repo: &Repository,
+    ssh_key_path: Option<&str>,
+    _ssh_passphrase: Option<&str>,
+) -> Result<(), String> {
+    let path = repo
+        .workdir()
+        .ok_or("No working directory found")?
+        .to_str()
+        .ok_or("Invalid path")?;
     let mut envs = Vec::new();
     if let Some(key) = ssh_key_path {
         if !key.trim().is_empty() {
@@ -453,16 +486,27 @@ pub fn push_changes(repo: &Repository, ssh_key_path: Option<&str>, _ssh_passphra
             } else {
                 key.to_string()
             };
-            envs.push(("GIT_SSH_COMMAND", format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path)));
+            envs.push((
+                "GIT_SSH_COMMAND",
+                format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path),
+            ));
         }
     }
-    
+
     run_git_command(vec!["push", "origin", "HEAD"], Some(path), envs)?;
     Ok(())
 }
 
-pub fn pull_changes(repo: &Repository, ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
-    let path = repo.workdir().ok_or("No working directory found")?.to_str().ok_or("Invalid path")?;
+pub fn pull_changes(
+    repo: &Repository,
+    ssh_key_path: Option<&str>,
+    _ssh_passphrase: Option<&str>,
+) -> Result<(), String> {
+    let path = repo
+        .workdir()
+        .ok_or("No working directory found")?
+        .to_str()
+        .ok_or("Invalid path")?;
     let mut envs = Vec::new();
     if let Some(key) = ssh_key_path {
         if !key.trim().is_empty() {
@@ -471,10 +515,13 @@ pub fn pull_changes(repo: &Repository, ssh_key_path: Option<&str>, _ssh_passphra
             } else {
                 key.to_string()
             };
-            envs.push(("GIT_SSH_COMMAND", format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path)));
+            envs.push((
+                "GIT_SSH_COMMAND",
+                format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path),
+            ));
         }
     }
-    
+
     run_git_command(vec!["pull", "origin", "HEAD"], Some(path), envs)?;
     Ok(())
 }
@@ -485,8 +532,12 @@ pub fn stash_save(repo: &mut Repository, message: Option<&str>) -> Result<(), St
         .or_else(|_| Signature::now("User", "user@example.com"))
         .map_err(|e| format!("Failed to create signature: {}", e))?;
 
-    repo.stash_save(&signature, message.unwrap_or(""), Some(StashFlags::INCLUDE_UNTRACKED))
-        .map_err(|e| format!("Failed to stash: {}", e))?;
+    repo.stash_save(
+        &signature,
+        message.unwrap_or(""),
+        Some(StashFlags::INCLUDE_UNTRACKED),
+    )
+    .map_err(|e| format!("Failed to stash: {}", e))?;
 
     Ok(())
 }
@@ -516,18 +567,35 @@ pub fn get_conflicts(repo: &Repository) -> Result<Vec<ConflictInfo>, String> {
     let index = repo
         .index()
         .map_err(|e| format!("Failed to get index: {}", e))?;
-    
+
     let mut conflicts = Vec::new();
-    for conflict in index.conflicts().map_err(|e| format!("Failed to get conflicts: {}", e))? {
+    for conflict in index
+        .conflicts()
+        .map_err(|e| format!("Failed to get conflicts: {}", e))?
+    {
         let conflict = conflict.map_err(|e| format!("Conflict error: {}", e))?;
-        let path = conflict.ancestor.as_ref().or(conflict.our.as_ref()).or(conflict.their.as_ref())
+        let path = conflict
+            .ancestor
+            .as_ref()
+            .or(conflict.our.as_ref())
+            .or(conflict.their.as_ref())
             .map(|e| String::from_utf8_lossy(&e.path).to_string())
             .unwrap_or_default();
-        
+
         conflicts.push(ConflictInfo {
             path,
-            our_status: if conflict.our.is_some() { "modified" } else { "deleted" }.to_string(),
-            their_status: if conflict.their.is_some() { "modified" } else { "deleted" }.to_string(),
+            our_status: if conflict.our.is_some() {
+                "modified"
+            } else {
+                "deleted"
+            }
+            .to_string(),
+            their_status: if conflict.their.is_some() {
+                "modified"
+            } else {
+                "deleted"
+            }
+            .to_string(),
         });
     }
 
@@ -538,9 +606,13 @@ pub fn resolve_conflict(repo: &Repository, path: &str, _use_ours: bool) -> Resul
     let mut index = repo
         .index()
         .map_err(|e| format!("Failed to get index: {}", e))?;
-    
-    index.add_path(Path::new(path)).map_err(|e| format!("Failed to resolve: {}", e))?;
-    index.write().map_err(|e| format!("Failed to write index: {}", e))?;
+
+    index
+        .add_path(Path::new(path))
+        .map_err(|e| format!("Failed to resolve: {}", e))?;
+    index
+        .write()
+        .map_err(|e| format!("Failed to write index: {}", e))?;
 
     Ok(())
 }
@@ -549,8 +621,16 @@ pub fn resolve_conflict(repo: &Repository, path: &str, _use_ours: bool) -> Resul
 pub fn create_remote_callbacks() -> () {
     // Deprecated
 }
-pub fn fetch_changes(repo: &Repository, ssh_key_path: Option<&str>, _ssh_passphrase: Option<&str>) -> Result<(), String> {
-    let path = repo.workdir().ok_or("No working directory found")?.to_str().ok_or("Invalid path")?;
+pub fn fetch_changes(
+    repo: &Repository,
+    ssh_key_path: Option<&str>,
+    _ssh_passphrase: Option<&str>,
+) -> Result<(), String> {
+    let path = repo
+        .workdir()
+        .ok_or("No working directory found")?
+        .to_str()
+        .ok_or("Invalid path")?;
     let mut envs = Vec::new();
     if let Some(key) = ssh_key_path {
         if !key.trim().is_empty() {
@@ -559,16 +639,21 @@ pub fn fetch_changes(repo: &Repository, ssh_key_path: Option<&str>, _ssh_passphr
             } else {
                 key.to_string()
             };
-            envs.push(("GIT_SSH_COMMAND", format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path)));
+            envs.push((
+                "GIT_SSH_COMMAND",
+                format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path),
+            ));
         }
     }
-    
+
     run_git_command(vec!["fetch", "origin"], Some(path), envs)?;
     Ok(())
 }
 
 pub fn get_remote_url(repo: &Repository, name: &str) -> Result<String, String> {
-    let remote = repo.find_remote(name).map_err(|e| format!("Failed to find remote: {}", e))?;
+    let remote = repo
+        .find_remote(name)
+        .map_err(|e| format!("Failed to find remote: {}", e))?;
     Ok(remote.url().unwrap_or("").to_string())
 }
 
