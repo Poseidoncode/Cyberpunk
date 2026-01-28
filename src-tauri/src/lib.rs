@@ -40,7 +40,7 @@ fn save_settings(settings: Settings, state: State<AppState>, app_handle: tauri::
 
 #[tauri::command]
 fn clone_repository(options: CloneOptions, state: State<AppState>, app_handle: tauri::AppHandle) -> Result<String, String> {
-    let repo = git_operations::clone_repository(&options.url, &options.path)?;
+    let repo = git_operations::clone_repository(&options.url, &options.path, state.settings.lock().unwrap().ssh_key_path.as_deref())?;
     let repo_path = repo.path().to_string_lossy().to_string();
     
     *state.current_repo_path.lock().unwrap() = Some(options.path.clone());
@@ -152,7 +152,7 @@ fn push_changes(state: State<AppState>) -> Result<(), String> {
     let path = repo_path.as_ref().ok_or("No repository open")?;
     
     let repo = git_operations::open_repository(path)?;
-    git_operations::push_changes(&repo)
+    git_operations::push_changes(&repo, state.settings.lock().unwrap().ssh_key_path.as_deref())
 }
 
 #[tauri::command]
@@ -161,7 +161,7 @@ fn pull_changes(state: State<AppState>) -> Result<(), String> {
     let path = repo_path.as_ref().ok_or("No repository open")?;
     
     let repo = git_operations::open_repository(path)?;
-    git_operations::pull_changes(&repo)
+    git_operations::pull_changes(&repo, state.settings.lock().unwrap().ssh_key_path.as_deref())
 }
 
 #[tauri::command]
@@ -170,7 +170,7 @@ fn fetch_changes(state: State<AppState>) -> Result<(), String> {
     let path = repo_path.as_ref().ok_or("No repository open")?;
     
     let repo = git_operations::open_repository(path)?;
-    git_operations::fetch_changes(&repo)
+    git_operations::fetch_changes(&repo, state.settings.lock().unwrap().ssh_key_path.as_deref())
 }
 
 #[tauri::command]

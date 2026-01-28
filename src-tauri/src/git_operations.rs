@@ -12,8 +12,27 @@ pub fn open_repository(path: &str) -> Result<Repository, String> {
     Repository::open(path).map_err(|e| format!("Failed to open repository: {}", e))
 }
 
-pub fn clone_repository(url: &str, path: &str) -> Result<Repository, String> {
-    Repository::clone(url, path).map_err(|e| format!("Failed to clone repository: {}", e))
+pub fn clone_repository(url: &str, path: &str, ssh_key_path: Option<&str>) -> Result<Repository, String> {
+    let mut callbacks = RemoteCallbacks::new();
+    if let Some(key_path) = ssh_key_path {
+        let key_path_owned = key_path.to_string();
+        callbacks.credentials(move |_url, username_from_url, _allowed_types| {
+            Cred::ssh_key(
+                username_from_url.unwrap_or("git"),
+                None,
+                std::path::Path::new(&key_path_owned),
+                None,
+            )
+        });
+    }
+
+    let mut fetch_opts = git2::FetchOptions::new();
+    fetch_opts.remote_callbacks(callbacks);
+
+    let mut builder = git2::build::RepoBuilder::new();
+    builder.fetch_options(fetch_opts);
+
+    builder.clone(url, Path::new(path)).map_err(|e| format!("Failed to clone repository: {}", e))
 }
 
 pub fn get_repository_info(repo: &Repository) -> Result<RepositoryInfo, String> {
@@ -382,7 +401,7 @@ pub fn get_diff(repo: &Repository, path: Option<&str>) -> Result<Vec<DiffInfo>, 
     Ok(diff_infos)
 }
 
-pub fn push_changes(repo: &Repository) -> Result<(), String> {
+pub fn push_changes(repo: &Repository, ssh_key_path: Option<&str>) -> Result<(), String> {
     let mut remote = repo
         .find_remote("origin")
         .map_err(|e| format!("Failed to find remote: {}", e))?;
@@ -394,20 +413,52 @@ pub fn push_changes(repo: &Repository) -> Result<(), String> {
     let branch_name = head.shorthand().unwrap_or("main");
     let refspec = format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name);
 
+    let mut callbacks = RemoteCallbacks::new();
+    if let Some(key_path) = ssh_key_path {
+        let key_path_owned = key_path.to_string();
+        callbacks.credentials(move |_url, username_from_url, _allowed_types| {
+            Cred::ssh_key(
+                username_from_url.unwrap_or("git"),
+                None,
+                std::path::Path::new(&key_path_owned),
+                None,
+            )
+        });
+    }
+
+    let mut push_opts = git2::PushOptions::new();
+    push_opts.remote_callbacks(callbacks);
+
     remote
-        .push(&[&refspec], None)
+        .push(&[&refspec], Some(&mut push_opts))
         .map_err(|e| format!("Failed to push: {}", e))?;
 
     Ok(())
 }
 
-pub fn pull_changes(repo: &Repository) -> Result<(), String> {
+pub fn pull_changes(repo: &Repository, ssh_key_path: Option<&str>) -> Result<(), String> {
     let mut remote = repo
         .find_remote("origin")
         .map_err(|e| format!("Failed to find remote: {}", e))?;
 
+    let mut callbacks = RemoteCallbacks::new();
+    if let Some(key_path) = ssh_key_path {
+        let key_path_owned = key_path.to_string();
+        callbacks.credentials(move |_url, username_from_url, _allowed_types| {
+            Cred::ssh_key(
+                username_from_url.unwrap_or("git"),
+                None,
+                std::path::Path::new(&key_path_owned),
+                None,
+            )
+        });
+    }
+
+    let mut fetch_opts = git2::FetchOptions::new();
+    fetch_opts.remote_callbacks(callbacks);
+
     remote
-        .fetch(&["main"], None, None)
+        .fetch(&["main"], Some(&mut fetch_opts), None)
         .map_err(|e| format!("Failed to fetch: {}", e))?;
 
     // Simple fast-forward merge
@@ -524,12 +575,28 @@ pub fn create_remote_callbacks() -> RemoteCallbacks<'static> {
     });
     callbacks
 }
-pub fn fetch_changes(repo: &Repository) -> Result<(), String> {
+pub fn fetch_changes(repo: &Repository, ssh_key_path: Option<&str>) -> Result<(), String> {
     let mut remote = repo
         .find_remote("origin")
         .map_err(|e| format!("Failed to find remote: {}", e))?;
 
-    remote.fetch(&["main"], None, None)
+    let mut callbacks = RemoteCallbacks::new();
+    if let Some(key_path) = ssh_key_path {
+        let key_path_owned = key_path.to_string();
+        callbacks.credentials(move |_url, username_from_url, _allowed_types| {
+            Cred::ssh_key(
+                username_from_url.unwrap_or("git"),
+                None,
+                std::path::Path::new(&key_path_owned),
+                None,
+            )
+        });
+    }
+
+    let mut fetch_opts = git2::FetchOptions::new();
+    fetch_opts.remote_callbacks(callbacks);
+
+    remote.fetch(&["main"], Some(&mut fetch_opts), None)
         .map_err(|e| format!("Failed to fetch: {}", e))?;
         
     Ok(())
