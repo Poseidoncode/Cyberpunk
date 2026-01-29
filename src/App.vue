@@ -23,6 +23,7 @@ const error = ref<string | null>(null);
 // Modal State
 const showCloneModal = ref(false);
 const cloneUrl = ref("");
+const clonePath = ref("");
 const showSettingsModal = ref(false);
 const showBranchModal = ref(false);
 const newBranchName = ref("");
@@ -124,31 +125,40 @@ const handleOpenRepo = async (path?: string) => {
 
 const triggerCloneModal = () => {
   cloneUrl.value = "";
+  clonePath.value = "";
   showCloneModal.value = true;
 };
 
+const handleBrowseClonePath = async () => {
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "Select Clone Destination",
+    });
+    if (selected && typeof selected === "string") {
+      clonePath.value = selected;
+    }
+  } catch (err) {
+    error.value = err as string;
+  }
+};
+
 const handleCloneRepo = async () => {
-  if (!cloneUrl.value) return;
+  if (!cloneUrl.value || !clonePath.value) return;
   const url = cloneUrl.value;
+  const path = clonePath.value;
   showCloneModal.value = false;
 
   try {
     loading.value = true;
     error.value = null;
 
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: "Select Clone Destination",
-    });
-
-    if (selected && typeof selected === "string") {
-      await gitService.cloneRepository(url, selected);
-      const info = await gitService.openRepository(selected);
-      repoInfo.value = info;
-      fetchSettings();
-      selectedFile.value = null;
-    }
+    await gitService.cloneRepository(url, path);
+    const info = await gitService.openRepository(path);
+    repoInfo.value = info;
+    fetchSettings();
+    selectedFile.value = null;
   } catch (err) {
     error.value = err as string;
   } finally {
@@ -382,11 +392,23 @@ const saveSettings = async () => {
       <!-- Clone Modal -->
       <div v-if="showCloneModal" class="border-2 border-terminal-primary p-6 w-full max-w-md font-mono" style="background-color: #000000;">
         <div class="border-b border-terminal-border pb-2 mb-4 text-xs uppercase text-glow">+--- CLONE REPOSITORY ---+</div>
-        <div class="mb-2 text-xs uppercase text-terminal-muted">REMOTE_URL:</div>
-        <input v-model="cloneUrl" placeholder="https://github.com/user/repo.git" class="w-full border border-terminal-border p-2 text-terminal-primary text-xs mb-6 focus:border-terminal-primary outline-none font-mono" style="background-color: #000000; color: #33ff00;" />
+        
+        <div class="mb-4">
+          <div class="mb-2 text-xs uppercase text-terminal-muted">REMOTE_URL:</div>
+          <input v-model="cloneUrl" placeholder="https://github.com/user/repo.git" class="w-full border border-terminal-border p-2 text-terminal-primary text-xs focus:border-terminal-primary outline-none font-mono" style="background-color: #000000; color: #33ff00;" />
+        </div>
+
+        <div class="mb-6">
+          <div class="mb-2 text-xs uppercase text-terminal-muted">DESTINATION_PATH:</div>
+          <div class="flex gap-2">
+            <input v-model="clonePath" placeholder="/path/to/destination" class="flex-1 border border-terminal-border p-2 text-terminal-primary text-xs focus:border-terminal-primary outline-none font-mono" style="background-color: #000000; color: #33ff00;" />
+            <button @click="handleBrowseClonePath" class="px-3 py-1 border border-terminal-border hover:bg-terminal-muted transition-colors text-xs uppercase">[ BROWSE ]</button>
+          </div>
+        </div>
+
         <div class="flex justify-end gap-3 text-xs uppercase">
           <button @click="showCloneModal = false" class="px-4 py-2 border border-terminal-border hover:bg-terminal-muted transition-colors">[ CANCEL ]</button>
-          <button @click="handleCloneRepo" class="bg-terminal-primary text-terminal-bg px-4 py-2 border border-terminal-primary hover:bg-terminal-muted hover:text-terminal-primary transition-colors font-bold">[ EXECUTE ]</button>
+          <button @click="handleCloneRepo" :disabled="!cloneUrl || !clonePath" class="bg-terminal-primary text-terminal-bg px-4 py-2 border border-terminal-primary disabled:opacity-50 disabled:bg-terminal-muted hover:bg-terminal-muted hover:text-terminal-primary transition-colors font-bold uppercase">[ EXECUTE ]</button>
         </div>
       </div>
 
@@ -449,7 +471,7 @@ const saveSettings = async () => {
     <!-- Main Content Area -->
     <div v-if="repoInfo" class="flex flex-1 overflow-hidden">
       <!-- Left Sidebar -->
-      <aside class="w-72 flex-shrink-0 border-r border-terminal-border flex flex-col bg-terminal-bg">
+      <aside class="w-72 min-w-[18rem] max-w-[18rem] flex-shrink-0 border-r border-terminal-border flex flex-col bg-terminal-bg">
         <div class="flex border-b border-terminal-border text-[10px] uppercase">
           <button @click="view = 'changes'" :class="{ 'bg-terminal-primary text-terminal-bg': view === 'changes' }" class="flex-1 py-2 font-bold hover:bg-terminal-muted transition-colors border-r border-terminal-border">CHANGES ({{ fileStatuses.length }})</button>
           <button @click="view = 'history'" :class="{ 'bg-terminal-primary text-terminal-bg': view === 'history', 'border-r border-terminal-border': stashes.length > 0 || conflicts.length > 0 }" class="flex-1 py-2 font-bold hover:bg-terminal-muted transition-colors">HISTORY</button>
