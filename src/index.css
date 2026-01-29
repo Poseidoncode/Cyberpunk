@@ -1,34 +1,70 @@
 @import url('https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
+:root {
+  /* Light Theme (Default) */
+  --background: #FAFAFA;
+  --foreground: #0F172A;
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+  --accent: #0052FF;
+  --accent-secondary: #4D7CFF;
+  --accent-foreground: #FFFFFF;
+  --border: #E2E8F0;
+  --card: #FFFFFF;
+  --ring: #0052FF;
+  --success: #10B981;
+  --error: #EF4444;
+  --warning: #F59E0B;
+  --accent-shadow: rgba(0, 82, 255, 0.4);
+}
+
+[data-theme="dark"] {
+  /* Dark Theme */
+  --background: #0F172A;
+  --foreground: #F8FAFC;
+  --muted: #1E293B;
+  --muted-foreground: #94A3B8;
+  --accent: #3B82F6;
+  --accent-secondary: #60A5FA;
+  --accent-foreground: #FFFFFF;
+  --border: #334155;
+  --card: #1E293B;
+  --ring: #3B82F6;
+  --success: #34D399;
+  --error: #F87171;
+  --warning: #FBBF24;
+  --accent-shadow: rgba(59, 130, 246, 0.4);
+}
+
 @theme {
-  --color-background: #FAFAFA;
-  --color-foreground: #0F172A;
-  --color-muted: #F1F5F9;
-  --color-muted-foreground: #64748B;
-  --color-accent: #0052FF;
-  --color-accent-secondary: #4D7CFF;
-  --color-accent-foreground: #FFFFFF;
-  --color-border: #E2E8F0;
-  --color-card: #FFFFFF;
-  --color-ring: #0052FF;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-secondary: var(--accent-secondary);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-card: var(--card);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-error: var(--error);
+  --color-warning: var(--warning);
 
-  --transition-safe: color 0.2s, background-color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
-
-  --color-success: #10B981;
-  --color-error: #EF4444;
-  --color-warning: #F59E0B;
-
+  /* Fonts */
   --font-display: "Calistoga", "Georgia", "serif";
   --font-sans: "Inter", "system-ui", "sans-serif";
   --font-mono: "JetBrains Mono", "monospace";
 
+  /* Shadows */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
   --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.08);
   --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.1);
-  --shadow-accent: 0 0 16px rgba(0, 82, 255, 0.4);
+  --shadow-accent: 0 0 16px var(--accent-shadow);
 
+  /* Animations */
   --animate-float: float 4s ease-in-out infinite;
   --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
   --animate-fade-in-up: fade-in-up 0.7s ease-out;
@@ -81,16 +117,21 @@
 @layer utilities {
   .gradient-text {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(to right, #0052FF, #4D7CFF);
+    background-image: linear-gradient(to right, var(--accent), var(--accent-secondary));
   }
 
   .gradient-bg {
-    background-image: linear-gradient(to right, #0052FF, #4D7CFF);
+    background-image: linear-gradient(to right, var(--accent), var(--accent-secondary));
   }
 
   .dot-pattern {
     background-image: radial-gradient(circle, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
     background-size: 32px 32px;
+  }
+
+  /* Adjust dot pattern for dark mode if needed, but opacity handles it somewhat */
+  [data-theme="dark"] .dot-pattern {
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   }
 
   .transition-safe {
@@ -118,5 +159,5 @@
 .radial-glow::before {
   content: '';
   @apply absolute -top-[150px] -right-[150px] w-[300px] h-[300px] pointer-events-none blur-[60px];
-  background: radial-gradient(circle, rgba(0, 82, 255, 0.08), transparent 70%);
+  background: radial-gradient(circle, var(--accent-shadow), transparent 70%);
 }

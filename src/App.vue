@@ -114,7 +114,7 @@ watch(selectedFile, (newFile: string | null) => {
 
 watch(selectedCommit, async (newCommit) => {
   if (newCommit) {
-    loading.value = true;
+    // loading.value = true; // Removed to prevent flickering
     try {
       // Assuming getCommitDiff exists in gitService, otherwise I need to add it
       // Based on previous checks, backend has it.
@@ -129,7 +129,7 @@ watch(selectedCommit, async (newCommit) => {
     } catch (err) {
       error.value = err as string;
     } finally {
-      loading.value = false;
+      // loading.value = false; // Removed to prevent flickering
     }
   } else {
     diffs.value = [];
@@ -430,6 +430,20 @@ const saveSettings = async () => {
     showSettingsModal.value = false;
   }
 };
+const toggleTheme = () => {
+  if (settings.value) {
+    settings.value.theme = settings.value.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', settings.value.theme);
+    saveSettings(); // This is async but we don't need to await for UI update
+  }
+};
+
+// Initialize theme on mount is handled in fetchSettings/watch, but let's make sure it applies
+watch(() => settings.value?.theme, (newTheme) => {
+  if (newTheme) {
+    document.documentElement.setAttribute('data-theme', newTheme);
+  }
+}, { immediate: true });
 </script>
 
 <template>
@@ -476,6 +490,9 @@ const saveSettings = async () => {
       <div class="flex items-center gap-3 text-sm">
         <button v-if="repoInfo" @click="handleFetch" class="px-4 py-2 rounded-lg border border-border hover:bg-muted transition-safe font-medium">Fetch</button>
         <button @click="showSettingsModal = true" class="px-4 py-2 rounded-lg border border-border hover:bg-muted transition-safe font-medium">Settings</button>
+        <button @click="toggleTheme" class="p-2 rounded-lg border border-border hover:bg-muted transition-safe text-lg" :title="settings?.theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
+          {{ settings?.theme === 'dark' ? '🌙' : '☀️' }}
+        </button>
       </div>
     </header>
 
