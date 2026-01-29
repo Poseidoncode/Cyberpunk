@@ -84,11 +84,27 @@ watch(selectedFile, (newFile: string | null) => {
   }
 });
 
-watch(selectedCommit, (newCommit: CommitInfo | null) => {
-  if (newCommit) {
-    gitService.getCommitDiff(newCommit.sha).then(d => diffs.value = d);
-  } else {
-    diffs.value = [];
+watch(cloneUrl, (newUrl) => {
+  if (newUrl && !clonePath.value) {
+    // Try to extract repo name from URL
+    // e.g. https://github.com/Poseidoncode/OpenWorld.git -> OpenWorld
+    const match = newUrl.match(/\/([^\/]+?)(\.git)?$/);
+    if (match && match[1]) {
+      const repoName = match[1];
+      
+      // Suggest a base path from current repo OR recent repos
+      let basePath = "";
+      if (repoInfo.value) {
+        basePath = repoInfo.value.path.substring(0, repoInfo.value.path.lastIndexOf('/'));
+      } else if (settings.value && settings.value.recent_repositories.length > 0) {
+        const lastRepo = settings.value.recent_repositories[0];
+        basePath = lastRepo.substring(0, lastRepo.lastIndexOf('/'));
+      }
+      
+      if (basePath) {
+        clonePath.value = `${basePath}/${repoName}`;
+      }
+    }
   }
 });
 
