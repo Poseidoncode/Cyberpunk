@@ -449,12 +449,12 @@ const saveSettings = async () => {
     <!-- Main Content Area -->
     <div v-if="repoInfo" class="flex flex-1 overflow-hidden">
       <!-- Left Sidebar -->
-      <aside class="w-72 border-r border-terminal-border flex flex-col bg-terminal-bg">
-        <div class="flex border-b border-terminal-border flex-wrap text-[10px] uppercase">
-          <button @click="view = 'changes'" :class="{ 'bg-terminal-primary text-terminal-bg': view === 'changes' }" class="flex-1 min-w-[33%] py-2 font-bold hover:bg-terminal-muted transition-colors border-r border-terminal-border">CHANGES ({{ fileStatuses.length }})</button>
-          <button @click="view = 'history'" :class="{ 'bg-terminal-primary text-terminal-bg': view === 'history' }" class="flex-1 min-w-[33%] py-2 font-bold hover:bg-terminal-muted transition-colors border-r border-terminal-border">HISTORY</button>
-          <button v-if="stashes.length > 0" @click="view = 'stashes'" :class="{ 'bg-terminal-primary text-terminal-bg': view === 'stashes' }" class="flex-1 min-w-[33%] py-2 font-bold hover:bg-terminal-muted transition-colors border-r border-terminal-border">STASH</button>
-          <button v-if="conflicts.length > 0" @click="view = 'conflicts'" :class="{ 'bg-terminal-primary text-terminal-bg': view === 'conflicts' }" class="flex-1 min-w-[33%] py-2 font-bold hover:bg-terminal-muted transition-colors">CONFLICT</button>
+      <aside class="w-72 flex-shrink-0 border-r border-terminal-border flex flex-col bg-terminal-bg">
+        <div class="flex border-b border-terminal-border text-[10px] uppercase">
+          <button @click="view = 'changes'" :class="{ 'bg-terminal-primary text-terminal-bg': view === 'changes' }" class="flex-1 py-2 font-bold hover:bg-terminal-muted transition-colors border-r border-terminal-border">CHANGES ({{ fileStatuses.length }})</button>
+          <button @click="view = 'history'" :class="{ 'bg-terminal-primary text-terminal-bg': view === 'history', 'border-r border-terminal-border': stashes.length > 0 || conflicts.length > 0 }" class="flex-1 py-2 font-bold hover:bg-terminal-muted transition-colors">HISTORY</button>
+          <button v-if="stashes.length > 0" @click="view = 'stashes'" :class="{ 'bg-terminal-primary text-terminal-bg': view === 'stashes' }" class="flex-1 py-2 font-bold hover:bg-terminal-muted transition-colors border-r border-terminal-border">STASH</button>
+          <button v-if="conflicts.length > 0" @click="view = 'conflicts'" :class="{ 'bg-terminal-primary text-terminal-bg': view === 'conflicts' }" class="flex-1 py-2 font-bold hover:bg-terminal-muted transition-colors">CONFLICT</button>
         </div>
 
         <div class="flex-1 overflow-auto p-2">
@@ -524,7 +524,7 @@ const saveSettings = async () => {
       </aside>
 
       <!-- Diff/Main View -->
-      <main class="flex-1 bg-terminal-bg flex flex-col overflow-hidden border-l border-terminal-border">
+      <main class="flex-1 bg-terminal-bg flex flex-col overflow-hidden">
         <div v-if="view === 'changes' && selectedFile" class="flex-1 flex flex-col overflow-hidden">
           <div class="h-8 border-b border-terminal-border flex items-center px-4 bg-terminal-bg text-[10px] font-mono truncate uppercase text-terminal-muted">
             FILE: {{ selectedFile }}
