@@ -30,6 +30,24 @@ const newBranchName = ref("");
 const showRecentRepos = ref(false);
 
 const stagedFiles = computed(() => fileStatuses.value.filter(f => f.staged).map(f => f.path));
+const allStaged = computed(() => fileStatuses.value.length > 0 && fileStatuses.value.every(f => f.staged));
+
+const toggleAllStaged = async () => {
+  if (fileStatuses.value.length === 0) return;
+  
+  try {
+    // loading.value = true; // Removed to prevent flickering
+    const paths = fileStatuses.value.map(f => f.path);
+    if (allStaged.value) {
+      await gitService.unstageFiles(paths);
+    } else {
+      await gitService.stageFiles(paths);
+    }
+    await refreshRepo();
+  } catch (err) {
+    error.value = err as string;
+  }
+};
 
 const fetchSettings = async () => {
   try {
@@ -145,6 +163,7 @@ const handleOpenRepo = async (path?: string) => {
     error.value = err as string;
   } finally {
     loading.value = false;
+    showRecentRepos.value = false;
   }
 };
 
@@ -396,7 +415,7 @@ const saveSettings = async () => {
           <div class="flex items-center gap-2 cursor-pointer" @click="showRecentRepos = !showRecentRepos">
             <span class="text-muted-foreground mr-1">Repository:</span>
             <span class="font-semibold gradient-text">{{ repoInfo ? repoInfo.path.split('/').pop() : 'None' }}</span>
-            <span class="text-xs text-muted-foreground transition-transform duration-200" :class="{ 'rotate-180': showRecentRepos }">▼</span>
+            <span class="text-[10px] text-muted-foreground transition-transform duration-200" :class="{ 'rotate-180': showRecentRepos }">▼</span>
           </div>
           
           <!-- Recent Repositories Dropdown -->
@@ -533,6 +552,16 @@ const saveSettings = async () => {
 
         <div class="flex-1 overflow-auto p-3">
           <div v-if="view === 'changes'" class="space-y-1.5">
+            <!-- Changes Header with Bulk Select -->
+            <div v-if="fileStatuses.length > 0" 
+                 @click="toggleAllStaged"
+                 class="flex items-center gap-3 p-2.5 mb-2 rounded-lg bg-muted/50 border border-border cursor-pointer hover:bg-muted/80 transition-safe">
+              <input type="checkbox" :checked="allStaged" class="w-4 h-4 rounded border-border accent-accent cursor-pointer pointer-events-none" />
+              <div class="text-xs font-semibold text-muted-foreground select-none">
+                {{ fileStatuses.length }} changed file{{ fileStatuses.length !== 1 ? 's' : '' }}
+              </div>
+            </div>
+
             <div v-for="file in fileStatuses" :key="file.path" 
                  class="group flex items-center gap-3 p-2.5 rounded-lg border border-transparent hover:border-border cursor-pointer transition-safe"
                  :class="{ 'border-accent bg-accent/5': selectedFile === file.path }"
