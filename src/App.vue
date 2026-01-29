@@ -16,6 +16,7 @@ const diffs = ref<DiffInfo[]>([]);
 const commitMessage = ref("");
 const selectedFile = ref<string | null>(null);
 const selectedCommit = ref<CommitInfo | null>(null);
+const selectedCommitFile = ref<string | null>(null);
 const view = ref<"changes" | "history" | "stashes" | "conflicts">("changes");
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -106,8 +107,33 @@ watch([repoInfo, view], () => {
 watch(selectedFile, (newFile: string | null) => {
   if (newFile && view.value === "changes") {
     gitService.getDiff(newFile).then(d => diffs.value = d);
-  } else if (!newFile) {
+  } else if (!newFile && view.value === "changes") {
     diffs.value = [];
+  }
+});
+
+watch(selectedCommit, async (newCommit) => {
+  if (newCommit) {
+    loading.value = true;
+    try {
+      // Assuming getCommitDiff exists in gitService, otherwise I need to add it
+      // Based on previous checks, backend has it.
+      // If TS error occurs, I might need to update git.ts, but let's assume it's there.
+      const d = await gitService.getCommitDiff(newCommit.sha);
+      diffs.value = d;
+      if (d.length > 0) {
+        selectedCommitFile.value = d[0].path;
+      } else {
+        selectedCommitFile.value = null;
+      }
+    } catch (err) {
+      error.value = err as string;
+    } finally {
+      loading.value = false;
+    }
+  } else {
+    diffs.value = [];
+    selectedCommitFile.value = null;
   }
 });
 
@@ -637,12 +663,33 @@ const saveSettings = async () => {
           </div>
         </div>
         <div v-else-if="view === 'history' && selectedCommit" class="flex-1 flex flex-col overflow-hidden">
-          <div class="h-12 border-b border-border flex items-center px-6 bg-card text-sm font-mono justify-between">
-            <span class="text-muted-foreground">{{ selectedCommit.sha.substring(0, 12) }}</span>
+          <div class="h-12 border-b border-border flex items-center px-6 bg-card text-sm font-mono justify-between flex-shrink-0">
+            <div class="flex items-center gap-3">
+              <span class="text-accent font-semibold">{{ selectedCommit.sha.substring(0, 7) }}</span>
+              <span class="text-muted-foreground truncate max-w-[300px]" :title="selectedCommit.message">{{ selectedCommit.message }}</span>
+            </div>
             <span class="text-muted-foreground">{{ selectedCommit.author }}</span>
           </div>
-          <div class="flex-1 overflow-auto">
-            <DiffViewer :diffs="diffs" />
+          
+          <div class="flex-1 flex overflow-hidden">
+            <!-- Left: File List -->
+            <div class="w-64 border-r border-border bg-card overflow-y-auto flex-shrink-0">
+              <div v-for="diff in diffs" :key="diff.path"
+                   @click="selectedCommitFile = diff.path"
+                   class="px-4 py-2 text-sm cursor-pointer border-l-2 hover:bg-muted transition-safe flex items-center justify-between group"
+                   :class="{ 'border-accent bg-accent/5': selectedCommitFile === diff.path, 'border-transparent': selectedCommitFile !== diff.path }">
+                <span class="truncate" :title="diff.path">{{ diff.path.split('/').pop() }}</span>
+                <span class="text-xs w-4 text-center font-bold" 
+                      :class="{ 'text-success': diff.additions > 0 && diff.deletions === 0, 'text-error': diff.deletions > 0 && diff.additions === 0, 'text-accent': diff.additions > 0 && diff.deletions > 0 }">
+                  {{ diff.additions > 0 && diff.deletions === 0 ? 'A' : (diff.deletions > 0 && diff.additions === 0 ? 'D' : 'M') }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Right: Diff -->
+            <div class="flex-1 overflow-auto bg-background">
+              <DiffViewer :diffs="diffs.filter(d => d.path === selectedCommitFile)" />
+            </div>
           </div>
         </div>
         <div v-else class="flex-1 flex items-center justify-center text-muted-foreground text-sm">
