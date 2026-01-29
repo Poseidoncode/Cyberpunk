@@ -83,6 +83,7 @@ export interface Settings {
   ssh_passphrase: string | null;
   theme: string;
   recent_repositories: string[];
+  last_opened_repository: string | null;
 }
 
 /**
@@ -276,8 +277,11 @@ export const gitService = {
   /**
    * 取得遠端 url
    */
-  async getRemoteUrl(name: string): Promise<string> {
-    return await invoke("get_remote_url", { name });
+  /**
+   * 取得目前已開啟的倉庫資訊（若有）
+   */
+  async getCurrentRepoInfo(): Promise<RepositoryInfo | null> {
+    return await invoke("get_current_repo_info");
   },
 };
 

@@ -27,6 +27,7 @@ const clonePath = ref("");
 const showSettingsModal = ref(false);
 const showBranchModal = ref(false);
 const newBranchName = ref("");
+const showRecentRepos = ref(false);
 
 const stagedFiles = computed(() => fileStatuses.value.filter(f => f.staged).map(f => f.path));
 
@@ -66,8 +67,16 @@ const refreshRepo = async () => {
   }
 };
 
-onMounted(() => {
-  fetchSettings();
+onMounted(async () => {
+  await fetchSettings();
+  try {
+    const info = await gitService.getCurrentRepoInfo();
+    if (info) {
+      repoInfo.value = info;
+    }
+  } catch (err) {
+    console.error("Failed to fetch initial repo info", err);
+  }
 });
 
 watch([repoInfo, view], () => {
@@ -383,9 +392,36 @@ const saveSettings = async () => {
     <!-- Header/Top Bar -->
     <header class="h-14 border-b border-border bg-card flex items-center px-6 justify-between flex-shrink-0 shadow-sm">
       <div class="flex items-center gap-10 text-sm">
-        <div class="flex items-center gap-2 cursor-pointer hover:bg-muted px-3 py-1.5 rounded-lg transition-safe" @click="handleOpenRepo()">
-          <span class="text-muted-foreground mr-1">Repository:</span>
-          <span class="font-semibold gradient-text">{{ repoInfo ? repoInfo.path.split('/').pop() : 'None' }}</span>
+        <div class="relative items-center gap-2 px-3 py-1.5 rounded-lg transition-safe" :class="{ 'bg-muted': showRecentRepos }">
+          <div class="flex items-center gap-2 cursor-pointer" @click="showRecentRepos = !showRecentRepos">
+            <span class="text-muted-foreground mr-1">Repository:</span>
+            <span class="font-semibold gradient-text">{{ repoInfo ? repoInfo.path.split('/').pop() : 'None' }}</span>
+            <span class="text-xs text-muted-foreground transition-transform duration-200" :class="{ 'rotate-180': showRecentRepos }">▼</span>
+          </div>
+          
+          <!-- Recent Repositories Dropdown -->
+          <div v-if="showRecentRepos" 
+               class="absolute top-full left-0 mt-2 w-72 bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div class="px-4 py-2 border-b border-border mb-1 flex justify-between items-center">
+              <span class="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Recent Repositories</span>
+              <button @click="handleOpenRepo()" class="text-[10px] text-accent hover:underline font-bold">OPEN NEW</button>
+            </div>
+            <div class="max-h-64 overflow-y-auto">
+              <div v-for="path in settings?.recent_repositories" :key="path"
+                   @click="handleOpenRepo(path)"
+                   class="px-4 py-2.5 hover:bg-muted cursor-pointer transition-safe group flex flex-col gap-0.5"
+                   :class="{ 'bg-accent/5': repoInfo?.path === path }">
+                <div class="text-sm font-semibold truncate flex items-center gap-2">
+                  <span v-if="repoInfo?.path === path" class="w-1.5 h-1.5 rounded-full bg-accent"></span>
+                  {{ path.split('/').pop() }}
+                </div>
+                <div class="text-[10px] text-muted-foreground truncate font-mono">{{ path }}</div>
+              </div>
+            </div>
+            <div v-if="!settings?.recent_repositories.length" class="px-4 py-4 text-center text-xs text-muted-foreground italic">
+              No recent repositories
+            </div>
+          </div>
         </div>
         <div v-if="repoInfo" class="flex items-center gap-2 cursor-pointer hover:bg-muted px-3 py-1.5 rounded-lg transition-safe" @click="showBranchModal = true">
           <span class="text-muted-foreground mr-1">Branch:</span>

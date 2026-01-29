@@ -62,6 +62,7 @@ pub struct Settings {
     pub ssh_passphrase: Option<String>,
     pub theme: String,
     pub recent_repositories: Vec<String>,
+    pub last_opened_repository: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
