@@ -533,6 +533,15 @@ watch(() => settings.value?.theme, (newTheme) => {
           <div class="flex items-center gap-2 cursor-pointer" @click="showRecentRepos = !showRecentRepos">
             <span class="text-muted-foreground mr-1">Repository:</span>
             <span class="font-semibold gradient-text">{{ repoInfo ? repoInfo.path.split('/').pop() : 'None' }}</span>
+            <div v-if="repoInfo && (repoInfo.ahead > 0 || repoInfo.behind > 0)" class="flex items-center gap-2 ml-1 px-2 py-0.5 bg-muted/50 rounded-full border border-border/50">
+              <span v-if="repoInfo.ahead > 0" class="text-[10px] font-bold text-success flex items-center gap-0.5" title="Unpushed commits">
+                ↑<span>{{ repoInfo.ahead }}</span>
+              </span>
+              <span v-if="repoInfo.ahead > 0 && repoInfo.behind > 0" class="w-[1px] h-2.5 bg-border"></span>
+              <span v-if="repoInfo.behind > 0" class="text-[10px] font-bold text-error flex items-center gap-0.5" title="Unpulled commits">
+                ↓<span>{{ repoInfo.behind }}</span>
+              </span>
+            </div>
             <span class="text-[10px] text-muted-foreground transition-transform duration-200" :class="{ 'rotate-180': showRecentRepos }">▼</span>
           </div>
           
@@ -708,7 +717,11 @@ watch(() => settings.value?.theme, (newTheme) => {
                  @click="selectedCommit = commit"
                  class="p-3 rounded-lg border border-transparent hover:border-border cursor-pointer transition-safe"
                  :class="{ 'border-accent bg-accent/5': selectedCommit?.sha === commit.sha }">
-              <div class="text-sm font-semibold truncate mb-1.5" :class="{ 'text-accent': selectedCommit?.sha === commit.sha }">{{ commit.message }}</div>
+              <div class="text-sm font-semibold truncate mb-1.5 flex items-center gap-2" :class="{ 'text-accent': selectedCommit?.sha === commit.sha }">
+                <span v-if="repoInfo && repoInfo.ahead > 0 && commits.findIndex(c => c.sha === commit.sha) < repoInfo.ahead" 
+                      class="text-success font-bold text-xs" title="Unpushed commit">↑</span>
+                {{ commit.message }}
+              </div>
               <div class="flex justify-between text-xs text-muted-foreground font-mono">
                 <span>{{ commit.sha.substring(0, 7) }}</span>
                 <span>{{ new Date(commit.timestamp * 1000).toLocaleDateString() }}</span>
@@ -750,8 +763,14 @@ watch(() => settings.value?.theme, (newTheme) => {
         </div>
 
         <div class="p-3 border-t border-border flex gap-2 overflow-x-auto bg-card text-sm">
-          <button @click="handlePull" class="flex-1 bg-card border border-border py-2 px-3 rounded-lg hover:bg-muted transition-safe font-medium">Pull</button>
-          <button @click="handlePush" class="flex-1 bg-card border border-border py-2 px-3 rounded-lg hover:bg-muted transition-safe font-medium">Push</button>
+          <button @click="handlePull" class="flex-1 bg-card border border-border py-2 px-3 rounded-lg hover:bg-muted transition-safe font-medium flex items-center justify-center gap-2">
+            Pull
+            <span v-if="repoInfo?.behind" class="flex items-center justify-center bg-error/10 text-error text-[10px] w-4 h-4 rounded-full font-bold">{{ repoInfo.behind }}</span>
+          </button>
+          <button @click="handlePush" class="flex-1 bg-card border border-border py-2 px-3 rounded-lg hover:bg-muted transition-safe font-medium flex items-center justify-center gap-2">
+            Push
+            <span v-if="repoInfo?.ahead" class="flex items-center justify-center bg-success/10 text-success text-[10px] w-4 h-4 rounded-full font-bold">{{ repoInfo.ahead }}</span>
+          </button>
           <button @click="handleStashSave" class="flex-1 bg-card border border-border py-2 px-3 rounded-lg hover:bg-muted transition-safe font-medium">Stash</button>
           <button v-if="view === 'history' && selectedCommit" @click="selectedCommit = null" class="flex-1 bg-card border border-border py-2 px-3 rounded-lg hover:bg-error/10 hover:text-error transition-safe font-medium">Clear</button>
         </div>
