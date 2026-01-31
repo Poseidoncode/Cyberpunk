@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import { gitService, type RepositoryInfo, type FileStatus, type BranchInfo, type CommitInfo, type StashInfo, type ConflictInfo, type Settings, type DiffInfo } from './services/git';
 import { open, ask, message } from '@tauri-apps/plugin-dialog';
 import DiffViewer from './components/DiffViewer.vue';
@@ -29,8 +29,18 @@ const showSettingsModal = ref(false);
 const showBranchModal = ref(false);
 const newBranchName = ref("");
 const showRecentRepos = ref(false);
+const dropdownRef = ref<HTMLElement | null>(null);
 const amendCommit = ref(false);
 const searchCommitQuery = ref("");
+
+const currentProjectName = computed(() => {
+  if (!repoInfo.value) return "";
+  return repoInfo.value.path.split('/').pop() || "";
+});
+
+watch(currentProjectName, (name) => {
+  document.title = name ? `Cyberpunk - ${name}` : "Cyberpunk";
+}, { immediate: true });
 
 const stagedFiles = computed(() => fileStatuses.value.filter(f => f.staged).map(f => f.path));
 const allStaged = computed(() => fileStatuses.value.length > 0 && fileStatuses.value.every(f => f.staged));
@@ -158,14 +168,17 @@ watch(selectedCommit, async (newCommit) => {
 });
 
 watch(cloneUrl, (newUrl) => {
-  if (newUrl && !clonePath.value) {
+  if (newUrl) {
     // Try to extract repo name from URL
     // e.g. https://github.com/Poseidoncode/OpenWorld.git -> OpenWorld
     const match = newUrl.match(/\/([^\/]+?)(\.git)?$/);
     if (match && match[1]) {
       const repoName = match[1];
       
-      // Suggest a base path from current repo OR recent repos
+      // Default base path: Documents/github in user's home
+      // Since we don't have easy access to $HOME here without a backend call, 
+      // let's try to see if we can get it from repoInfo or just use a sensible default.
+      // Better yet, let's keep the existing logic but FALLBACK to a standard path if null.
       let basePath = "";
       if (repoInfo.value) {
         basePath = repoInfo.value.path.substring(0, repoInfo.value.path.lastIndexOf('/'));
@@ -173,10 +186,14 @@ watch(cloneUrl, (newUrl) => {
         const lastRepo = settings.value.recent_repositories[0];
         basePath = lastRepo.substring(0, lastRepo.lastIndexOf('/'));
       }
-      
-      if (basePath) {
-        clonePath.value = `${basePath}/${repoName}`;
+
+      // If still no basePath or it doesn't look like a github dir, we could hardcode, 
+      // but the user's home is usually /Users/poseidomhung
+      if (!basePath || !basePath.includes('github')) {
+        basePath = "/Users/poseidomhung/Documents/github";
       }
+      
+      clonePath.value = `${basePath}/${repoName}`;
     }
   }
 });
@@ -522,6 +539,20 @@ watch(() => settings.value?.theme, (newTheme) => {
     document.documentElement.setAttribute('data-theme', newTheme);
   }
 }, { immediate: true });
+
+const handleClickOutside = (event: MouseEvent) => {
+  if (showRecentRepos.value && dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) {
+    showRecentRepos.value = false;
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('click', handleClickOutside);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('click', handleClickOutside);
+});
 </script>
 
 <template>
@@ -529,7 +560,7 @@ watch(() => settings.value?.theme, (newTheme) => {
     <!-- Header/Top Bar -->
     <header class="h-14 border-b border-border bg-card flex items-center px-6 justify-between flex-shrink-0 shadow-sm">
       <div class="flex items-center gap-10 text-sm">
-        <div class="relative items-center gap-2 px-3 py-1.5 rounded-lg transition-safe" :class="{ 'bg-muted': showRecentRepos }">
+        <div ref="dropdownRef" class="relative items-center gap-2 px-3 py-1.5 rounded-lg transition-safe" :class="{ 'bg-muted': showRecentRepos }">
           <div class="flex items-center gap-2 cursor-pointer" @click="showRecentRepos = !showRecentRepos">
             <span class="text-muted-foreground mr-1">Repository:</span>
             <span class="font-semibold gradient-text">{{ repoInfo ? repoInfo.path.split('/').pop() : 'None' }}</span>
@@ -581,6 +612,13 @@ watch(() => settings.value?.theme, (newTheme) => {
         <button @click="toggleTheme" class="p-2 rounded-lg border border-border hover:bg-muted transition-safe text-lg" :title="settings?.theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
           {{ settings?.theme === 'dark' ? '🌙' : '☀️' }}
         </button>
+      </div>
+
+      <!-- Center Title (App + Project Name) -->
+      <div v-if="repoInfo" class="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2 pointer-events-none">
+        <span class="text-xs font-bold text-muted-foreground uppercase tracking-wider">Cyberpunk</span>
+        <span class="text-xs text-border">/</span>
+        <span class="text-sm font-bold text-accent">{{ currentProjectName }}</span>
       </div>
     </header>
 

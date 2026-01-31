@@ -553,30 +553,48 @@ pub fn get_diff(repo: &Repository, path: Option<&str>) -> Result<Vec<DiffInfo>, 
 
     let diff = if let Some(tree) = head_tree {
         repo.diff_tree_to_workdir_with_index(Some(&tree), Some(&mut opts))
-            .map_err(|e| format!("Failed to get diff: {}", e))? 
+            .map_err(|e| format!("Failed to get diff (tree to workdir): {}", e))?
     } else {
         repo.diff_index_to_workdir(None, Some(&mut opts))
-            .map_err(|e| format!("Failed to get diff: {}", e))?
+            .map_err(|e| format!("Failed to get diff (index to workdir): {}", e))?
     };
 
     let mut diff_infos = Vec::new();
 
-    diff.foreach(
-        &mut |delta, _| {
-            let file_path = delta.new_file().path().unwrap_or(Path::new("unknown"));
+    diff.print(git2::DiffFormat::Patch, |delta, _hunk, line| {
+        let file_path = delta
+            .new_file()
+            .path()
+            .and_then(|p| p.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let line_content = String::from_utf8_lossy(line.content()).to_string();
+        let prefix = match line.origin() {
+            '+' => "+",
+            '-' => "-",
+            ' ' => " ",
+            _ => "",
+        };
+
+        if let Some(info) = diff_infos.iter_mut().find(|i: &&mut DiffInfo| i.path == file_path) {
+            info.diff_text.push_str(&format!("{}{}", prefix, line_content));
+            match line.origin() {
+                '+' => info.additions += 1,
+                '-' => info.deletions += 1,
+                _ => {}
+            }
+        } else {
             diff_infos.push(DiffInfo {
-                path: file_path.to_string_lossy().to_string(),
-                additions: 0,
-                deletions: 0,
-                diff_text: String::new(),
+                path: file_path,
+                diff_text: format!("{}{}", prefix, line_content),
+                additions: if line.origin() == '+' { 1 } else { 0 },
+                deletions: if line.origin() == '-' { 1 } else { 0 },
             });
-            true
-        },
-        None,
-        None,
-        None,
-    )
-    .map_err(|e| format!("Failed to iterate diff: {}", e))?;
+        }
+        true
+    })
+    .map_err(|e| format!("Failed to parse diff: {}", e))?;
 
     Ok(diff_infos)
 }

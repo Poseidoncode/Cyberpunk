@@ -152,6 +152,12 @@ export const gitService = {
   async stageFiles(files: string[]): Promise<void> {
     return await invoke("stage_files", { files });
   },
+  /**
+   * 將多個檔案從暫存移除
+   */
+  async unstageFiles(files: string[]): Promise<void> {
+    return await invoke("unstage_files", { files });
+  },
 
   /**
    * 丟棄單一檔案的所有變動
