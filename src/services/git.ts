@@ -126,6 +126,27 @@ export const gitService = {
   },
 
   /**
+   * 修正最後一次 commit
+   */
+  async amendCommit(message: string): Promise<string> {
+    return await invoke("amend_commit", { message });
+  },
+
+  /**
+   * 挑選特定 commit 併入當前分支
+   */
+  async cherryPick(sha: string): Promise<void> {
+    return await invoke("cherry_pick", { sha });
+  },
+
+  /**
+   * 反轉特定 commit
+   */
+  async revertCommit(sha: string): Promise<void> {
+    return await invoke("revert_commit", { sha });
+  },
+
+  /**
    * 將多個檔案加入暫存
    */
   async stageFiles(files: string[]): Promise<void> {
@@ -133,17 +154,17 @@ export const gitService = {
   },
 
   /**
-   * 將多個檔案取消暫存
-   */
-  async unstageFiles(files: string[]): Promise<void> {
-    return await invoke("unstage_files", { files });
-  },
-
-  /**
    * 丟棄單一檔案的所有變動
    */
   async discardChanges(filePath: string): Promise<void> {
     return await invoke("discard_changes", { filePath });
+  },
+
+  /**
+   * 丟棄所有未提交的變動 (一鍵還原)
+   */
+  async discardAllChanges(): Promise<void> {
+    return await invoke("discard_all_changes");
   },
 
   /**

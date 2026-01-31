@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue';
 import { gitService, type RepositoryInfo, type FileStatus, type BranchInfo, type CommitInfo, type StashInfo, type ConflictInfo, type Settings, type DiffInfo } from './services/git';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, ask, message } from '@tauri-apps/plugin-dialog';
 import DiffViewer from './components/DiffViewer.vue';
 
 const repoInfo = ref<RepositoryInfo | null>(null);
@@ -29,9 +29,21 @@ const showSettingsModal = ref(false);
 const showBranchModal = ref(false);
 const newBranchName = ref("");
 const showRecentRepos = ref(false);
+const amendCommit = ref(false);
+const searchCommitQuery = ref("");
 
 const stagedFiles = computed(() => fileStatuses.value.filter(f => f.staged).map(f => f.path));
 const allStaged = computed(() => fileStatuses.value.length > 0 && fileStatuses.value.every(f => f.staged));
+
+const filteredCommits = computed(() => {
+  if (!searchCommitQuery.value.trim()) return commits.value;
+  const q = searchCommitQuery.value.toLowerCase();
+  return commits.value.filter(c => 
+    c.message.toLowerCase().includes(q) || 
+    c.sha.toLowerCase().includes(q) || 
+    c.author.toLowerCase().includes(q)
+  );
+});
 
 const toggleAllStaged = async () => {
   if (fileStatuses.value.length === 0) return;
@@ -101,6 +113,14 @@ onMounted(async () => {
 watch([repoInfo, view], () => {
   if (repoInfo.value) {
     refreshRepo();
+  }
+});
+
+watch(amendCommit, (newVal) => {
+  if (newVal && commits.value.length > 0) {
+    commitMessage.value = commits.value[0].message;
+  } else if (!newVal) {
+    commitMessage.value = "";
   }
 });
 
@@ -250,7 +270,11 @@ const toggleStaged = async (file: FileStatus) => {
 };
 
 const handleDiscardChanges = async (path: string) => {
-  if (!confirm(`Are you sure you want to discard changes in ${path}? This cannot be undone.`)) return;
+  const confirmed = await ask(`Are you sure you want to discard changes in ${path}? This cannot be undone.`, { 
+    title: 'Discard Changes',
+    kind: 'warning'
+  });
+  if (!confirmed) return;
   try {
     loading.value = true;
     await gitService.discardChanges(path);
@@ -263,23 +287,76 @@ const handleDiscardChanges = async (path: string) => {
   }
 };
 
+const handleDiscardAllChanges = async () => {
+  const confirmed = await ask("Are you sure you want to discard ALL changes? This cannot be undone.", {
+    title: 'Discard All Changes',
+    kind: 'warning'
+  });
+  if (!confirmed) return;
+  try {
+    loading.value = true;
+    await gitService.discardAllChanges();
+    selectedFile.value = null;
+    await refreshRepo();
+  } catch (err) {
+    error.value = err as string;
+  } finally {
+    loading.value = false;
+  }
+};
+
 const handleCommit = async () => {
   if (!commitMessage.value.trim()) {
-    alert("Please enter a commit message");
+    await message("Please enter a commit message", { title: 'Commit Error', kind: 'error' });
     return;
   }
-  if (stagedFiles.value.length === 0) {
-    alert("Please select files to commit");
+  if (!amendCommit.value && stagedFiles.value.length === 0) {
+    await message("Please select files to commit", { title: 'Commit Error', kind: 'error' });
     return;
   }
 
   try {
     loading.value = true;
     error.value = null;
-    await gitService.createCommit(commitMessage.value, stagedFiles.value);
+    if (amendCommit.value) {
+      await gitService.amendCommit(commitMessage.value);
+      amendCommit.value = false;
+    } else {
+      await gitService.createCommit(commitMessage.value, stagedFiles.value);
+    }
     commitMessage.value = "";
     selectedFile.value = null;
     await refreshRepo();
+  } catch (err) {
+    error.value = err as string;
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleCherryPick = async (sha: string) => {
+  const confirmed = await ask(`Cherry-pick commit ${sha.substring(0, 7)}?`, { title: 'Cherry-pick', kind: 'info' });
+  if (!confirmed) return;
+  try {
+    loading.value = true;
+    await gitService.cherryPick(sha);
+    await refreshRepo();
+    await message("Cherry-pick successful", { title: 'Success' });
+  } catch (err) {
+    error.value = err as string;
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleRevertCommit = async (sha: string) => {
+  const confirmed = await ask(`Revert commit ${sha.substring(0, 7)}?`, { title: 'Revert Commit', kind: 'warning' });
+  if (!confirmed) return;
+  try {
+    loading.value = true;
+    await gitService.revertCommit(sha);
+    await refreshRepo();
+    await message("Revert successful", { title: 'Success' });
   } catch (err) {
     error.value = err as string;
   } finally {
@@ -292,7 +369,7 @@ const handlePush = async () => {
     loading.value = true;
     error.value = null;
     await gitService.push();
-    alert("Pushed successfully!");
+    await message("Pushed successfully!", { title: 'Success' });
   } catch (err) {
     error.value = err as string;
   } finally {
@@ -318,7 +395,7 @@ const handleFetch = async () => {
     loading.value = true;
     error.value = null;
     await gitService.fetch();
-    alert("Fetch completed!");
+    await message("Fetch completed!", { title: 'Success' });
   } catch (err) {
     error.value = err as string;
   } finally {
@@ -412,9 +489,10 @@ const handleSwitchToSSH = async () => {
     const ownerRepo = "Poseidoncode/Cyberpunk"; // Hardcoded for this specific user/repo based on context
     const sshUrl = `git@github.com:${ownerRepo}.git`;
     
-    if (confirm(`Switch remote protocol to SSH?\nNew URL: ${sshUrl}`)) {
+    const confirmed = await ask(`Switch remote protocol to SSH?\nNew URL: ${sshUrl}`, { title: 'Switch Remote', kind: 'warning' });
+    if (confirmed) {
       await gitService.setRemoteUrl("origin", sshUrl);
-      alert("Remote protocol switched to SSH successfully!");
+      await message("Remote protocol switched to SSH successfully!", { title: 'Success' });
       showSettingsModal.value = false;
     }
   } catch (err) {
@@ -488,6 +566,7 @@ watch(() => settings.value?.theme, (newTheme) => {
         </div>
       </div>
       <div class="flex items-center gap-3 text-sm">
+        <button v-if="repoInfo" @click="triggerCloneModal" class="px-4 py-2 rounded-lg border border-border hover:bg-muted transition-safe font-medium">Clone</button>
         <button v-if="repoInfo" @click="handleFetch" class="px-4 py-2 rounded-lg border border-border hover:bg-muted transition-safe font-medium">Fetch</button>
         <button @click="showSettingsModal = true" class="px-4 py-2 rounded-lg border border-border hover:bg-muted transition-safe font-medium">Settings</button>
         <button @click="toggleTheme" class="p-2 rounded-lg border border-border hover:bg-muted transition-safe text-lg" :title="settings?.theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
@@ -597,12 +676,14 @@ watch(() => settings.value?.theme, (newTheme) => {
           <div v-if="view === 'changes'" class="space-y-1.5">
             <!-- Changes Header with Bulk Select -->
             <div v-if="fileStatuses.length > 0" 
-                 @click="toggleAllStaged"
-                 class="flex items-center gap-3 p-2.5 mb-2 rounded-lg bg-muted/50 border border-border cursor-pointer hover:bg-muted/80 transition-safe">
-              <input type="checkbox" :checked="allStaged" class="w-4 h-4 rounded border-border accent-accent cursor-pointer pointer-events-none" />
-              <div class="text-xs font-semibold text-muted-foreground select-none">
-                {{ fileStatuses.length }} changed file{{ fileStatuses.length !== 1 ? 's' : '' }}
+                 class="flex items-center gap-3 p-2.5 mb-2 rounded-lg bg-muted/50 border border-border transition-safe justify-between">
+              <div class="flex items-center gap-3 cursor-pointer" @click="toggleAllStaged">
+                <input type="checkbox" :checked="allStaged" class="w-4 h-4 rounded border-border accent-accent cursor-pointer pointer-events-none" />
+                <div class="text-xs font-semibold text-muted-foreground select-none">
+                  {{ fileStatuses.length }} changed file{{ fileStatuses.length !== 1 ? 's' : '' }}
+                </div>
               </div>
+              <button @click.stop="handleDiscardAllChanges" class="text-[10px] text-error hover:underline font-bold px-2 py-1 rounded hover:bg-error/10 transition-safe">DISCARD ALL</button>
             </div>
 
             <div v-for="file in fileStatuses" :key="file.path" 
@@ -620,7 +701,10 @@ watch(() => settings.value?.theme, (newTheme) => {
             </div>
           </div>
           <div v-else-if="view === 'history'" class="space-y-1.5">
-            <div v-for="commit in commits" :key="commit.sha" 
+            <div class="mb-2">
+               <input v-model="searchCommitQuery" placeholder="Search commits..." class="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-accent" />
+            </div>
+            <div v-for="commit in filteredCommits" :key="commit.sha" 
                  @click="selectedCommit = commit"
                  class="p-3 rounded-lg border border-transparent hover:border-border cursor-pointer transition-safe"
                  :class="{ 'border-accent bg-accent/5': selectedCommit?.sha === commit.sha }">
@@ -653,11 +737,15 @@ watch(() => settings.value?.theme, (newTheme) => {
         </div>
 
         <div v-if="view === 'changes'" class="p-4 border-t border-border bg-muted/30">
+          <div class="flex items-center gap-2 mb-2">
+             <input type="checkbox" id="amend" v-model="amendCommit" class="w-3.5 h-3.5 rounded border-border accent-accent" />
+             <label for="amend" class="text-xs font-medium text-muted-foreground cursor-pointer select-none">Amend Last Commit</label>
+          </div>
           <label class="block mb-2 text-sm font-medium text-foreground">Commit Message</label>
           <textarea v-model="commitMessage" placeholder="Describe your changes..." class="w-full bg-card border border-border rounded-lg p-3 text-foreground text-sm mb-3 focus:ring-2 focus:ring-accent focus:border-transparent outline-none resize-none" rows="3" />
-          <button @click="handleCommit" :disabled="loading || !commitMessage.trim() || stagedFiles.length === 0" 
+          <button @click="handleCommit" :disabled="loading || !commitMessage.trim() || (!amendCommit && stagedFiles.length === 0)" 
                   class="w-full gradient-bg text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed py-2.5 rounded-lg font-semibold text-sm hover:shadow-accent transition-safe">
-            Commit to {{ branches.find((b: BranchInfo) => b.is_current)?.name || 'HEAD' }}
+            {{ amendCommit ? 'Amend Commit' : `Commit to ${branches.find((b: BranchInfo) => b.is_current)?.name || 'HEAD'}` }}
           </button>
         </div>
 
@@ -680,12 +768,15 @@ watch(() => settings.value?.theme, (newTheme) => {
           </div>
         </div>
         <div v-else-if="view === 'history' && selectedCommit" class="flex-1 flex flex-col overflow-hidden">
-          <div class="h-12 border-b border-border flex items-center px-6 bg-card text-sm font-mono justify-between flex-shrink-0">
-            <div class="flex items-center gap-3">
-              <span class="text-accent font-semibold">{{ selectedCommit.sha.substring(0, 7) }}</span>
-              <span class="text-muted-foreground truncate max-w-[300px]" :title="selectedCommit.message">{{ selectedCommit.message }}</span>
+          <div class="h-14 border-b border-border flex items-center px-6 bg-card text-sm font-mono justify-between flex-shrink-0">
+            <div class="flex items-center gap-3 overflow-hidden">
+              <span class="text-accent font-semibold flex-shrink-0">{{ selectedCommit.sha.substring(0, 7) }}</span>
+              <span class="text-muted-foreground truncate" :title="selectedCommit.message">{{ selectedCommit.message }}</span>
             </div>
-            <span class="text-muted-foreground">{{ selectedCommit.author }}</span>
+            <div class="flex items-center gap-3 flex-shrink-0 ml-4">
+               <button @click="handleCherryPick(selectedCommit.sha)" class="px-3 py-1.5 border border-border rounded text-xs hover:bg-muted transition-safe font-medium" title="Apply this commit to current branch">Cherry-pick</button>
+               <button @click="handleRevertCommit(selectedCommit.sha)" class="px-3 py-1.5 border border-border rounded text-xs hover:bg-muted hover:text-error transition-safe font-medium" title="Create a new commit that reverts this one">Revert</button>
+            </div>
           </div>
           
           <div class="flex-1 flex overflow-hidden">

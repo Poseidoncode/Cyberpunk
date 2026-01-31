@@ -204,6 +204,111 @@ pub fn unstage_files(repo: &Repository, paths: Vec<String>) -> Result<(), String
     Ok(())
 }
 
+pub fn amend_last_commit(repo: &Repository, message: &str) -> Result<String, String> {
+    let mut index = repo
+        .index()
+        .map_err(|e| format!("Failed to get index: {}", e))?;
+
+    let tree_id = index
+        .write_tree()
+        .map_err(|e| format!("Failed to write tree: {}", e))?;
+
+    let tree = repo
+        .find_tree(tree_id)
+        .map_err(|e| format!("Failed to find tree: {}", e))?;
+
+    let signature = repo
+        .signature()
+        .or_else(|_| Signature::now("User", "user@example.com"))
+        .map_err(|e| format!("Failed to create signature: {}", e))?;
+
+    let head = repo
+        .head()
+        .map_err(|e| format!("Failed to get HEAD: {}", e))?;
+    let last_commit = head
+        .peel_to_commit()
+        .map_err(|e| format!("Failed to peel HEAD to commit: {}", e))?;
+
+    let commit_id = last_commit
+        .amend(
+            Some("HEAD"),
+            Some(&signature),
+            Some(&signature),
+            None,
+            Some(message),
+            Some(&tree),
+        )
+        .map_err(|e| format!("Failed to amend commit: {}", e))?;
+
+    Ok(commit_id.to_string())
+}
+
+pub fn cherry_pick(repo: &Repository, sha: &str) -> Result<(), String> {
+    let commit = repo
+        .find_commit(git2::Oid::from_str(sha).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("Commit not found: {}", e))?;
+
+    let mut opts = git2::CherrypickOptions::new();
+    repo.cherrypick(&commit, Some(&mut opts))
+        .map_err(|e| format!("Cherry-pick failed: {}", e))?;
+
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+    if index.has_conflicts() {
+        return Err("Cherry-pick resulted in conflicts. Please resolve them.".to_string());
+    }
+
+    let tree_id = index.write_tree().map_err(|e| e.to_string())?;
+    let tree = repo.find_tree(tree_id).map_err(|e| e.to_string())?;
+    let signature = repo.signature().map_err(|e| e.to_string())?;
+    let head = repo.head().unwrap();
+    let parent = head.peel_to_commit().unwrap();
+
+    repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        commit.message().unwrap_or("Cherry-picked commit"),
+        &tree,
+        &[&parent],
+    ).map_err(|e| e.to_string())?;
+
+    repo.cleanup_state().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn revert_commit(repo: &Repository, sha: &str) -> Result<(), String> {
+    let commit = repo
+        .find_commit(git2::Oid::from_str(sha).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("Commit not found: {}", e))?;
+
+    let mut opts = git2::RevertOptions::new();
+    repo.revert(&commit, Some(&mut opts))
+        .map_err(|e| format!("Revert failed: {}", e))?;
+
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+    if index.has_conflicts() {
+        return Err("Revert resulted in conflicts. Please resolve them.".to_string());
+    }
+
+    let tree_id = index.write_tree().map_err(|e| e.to_string())?;
+    let tree = repo.find_tree(tree_id).map_err(|e| e.to_string())?;
+    let signature = repo.signature().map_err(|e| e.to_string())?;
+    let head = repo.head().unwrap();
+    let parent = head.peel_to_commit().unwrap();
+
+    repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        &format!("Revert \"{}\"", commit.message().unwrap_or("")),
+        &tree,
+        &[&parent],
+    ).map_err(|e| e.to_string())?;
+
+    repo.cleanup_state().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn discard_changes(repo: &Repository, path: &str) -> Result<(), String> {
     let mut checkout_opts = git2::build::CheckoutBuilder::new();
     checkout_opts.force().path(path);
@@ -225,6 +330,14 @@ pub fn discard_changes(repo: &Repository, path: &str) -> Result<(), String> {
 
     Ok(())
 }
+
+pub fn discard_all_changes(repo: &Repository) -> Result<(), String> {
+    let mut checkout_opts = git2::build::CheckoutBuilder::new();
+    checkout_opts.force();
+    repo.checkout_head(Some(&mut checkout_opts))
+        .map_err(|e| format!("Failed to discard all changes: {}", e))
+}
+
 
 pub fn create_branch(repo: &Repository, name: &str) -> Result<(), String> {
     let head = repo
@@ -252,7 +365,7 @@ pub fn get_commit_diff(repo: &Repository, sha: &str) -> Result<Vec<DiffInfo>, St
         Some(
             commit
                 .parent(0)
-                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())? 
                 .tree()
                 .map_err(|e| e.to_string())?,
         )
@@ -291,7 +404,7 @@ pub fn get_commit_diff(repo: &Repository, sha: &str) -> Result<Vec<DiffInfo>, St
             match line.origin() {
                 '+' => info.additions += 1,
                 '-' => info.deletions += 1,
-                _ => {}
+                _ => {} 
             }
         } else {
             diff_infos.push(DiffInfo {
@@ -440,7 +553,7 @@ pub fn get_diff(repo: &Repository, path: Option<&str>) -> Result<Vec<DiffInfo>, 
 
     let diff = if let Some(tree) = head_tree {
         repo.diff_tree_to_workdir_with_index(Some(&tree), Some(&mut opts))
-            .map_err(|e| format!("Failed to get diff: {}", e))?
+            .map_err(|e| format!("Failed to get diff: {}", e))? 
     } else {
         repo.diff_index_to_workdir(None, Some(&mut opts))
             .map_err(|e| format!("Failed to get diff: {}", e))?
@@ -522,7 +635,16 @@ pub fn pull_changes(
         }
     }
 
-    run_git_command(vec!["pull", "origin", "HEAD"], Some(path), envs)?;
+    let head = repo
+        .head()
+        .map_err(|e| format!("Failed to get HEAD: {}", e))?;
+    let branch_name = if head.is_branch() {
+        head.shorthand().unwrap_or("HEAD")
+    } else {
+        "HEAD"
+    };
+
+    run_git_command(vec!["pull", "origin", branch_name], Some(path), envs)?;
     Ok(())
 }
 
@@ -571,8 +693,7 @@ pub fn get_conflicts(repo: &Repository) -> Result<Vec<ConflictInfo>, String> {
     let mut conflicts = Vec::new();
     for conflict in index
         .conflicts()
-        .map_err(|e| format!("Failed to get conflicts: {}", e))?
-    {
+        .map_err(|e| format!("Failed to get conflicts: {}", e))? {
         let conflict = conflict.map_err(|e| format!("Conflict error: {}", e))?;
         let path = conflict
             .ancestor
@@ -661,4 +782,119 @@ pub fn set_remote_url(repo: &Repository, name: &str, url: &str) -> Result<(), St
     repo.remote_set_url(name, url)
         .map_err(|e| format!("Failed to set remote URL: {}", e))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn get_temp_dir() -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push("tauri_git_test");
+        path.push(format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_pull_changes() {
+        // Setup origin
+        let root = get_temp_dir();
+        let origin_path = root.join("origin");
+        let local_path = root.join("local");
+
+        fs::create_dir(&origin_path).unwrap();
+        let _ = Repository::init(&origin_path).unwrap();
+        
+        // Initial commit in origin
+        run_git_command(vec!["init"], Some(origin_path.to_str().unwrap()), vec![]).unwrap();
+        run_git_command(vec!["config", "user.name", "Test User"], Some(origin_path.to_str().unwrap()), vec![]).unwrap();
+        run_git_command(vec!["config", "user.email", "test@example.com"], Some(origin_path.to_str().unwrap()), vec![]).unwrap();
+        run_git_command(vec!["commit", "--allow-empty", "-m", "Initial commit"], Some(origin_path.to_str().unwrap()), vec![]).unwrap();
+        
+        // Create a branch 'feature'
+        run_git_command(vec!["checkout", "-b", "feature"], Some(origin_path.to_str().unwrap()), vec![]).unwrap();
+
+        // Clone to local
+        run_git_command(vec!["clone", origin_path.to_str().unwrap(), local_path.to_str().unwrap()], None, vec![]).unwrap();
+        let local = Repository::open(&local_path).unwrap();
+        run_git_command(vec!["config", "user.name", "Test User"], Some(local_path.to_str().unwrap()), vec![]).unwrap();
+        run_git_command(vec!["config", "user.email", "test@example.com"], Some(local_path.to_str().unwrap()), vec![]).unwrap();
+
+        // Switch local to feature branch (needs fetch first usually but clone gets all)
+        // Checkout feature branch tracking origin/feature
+        // origin was on 'feature', so clone checked it out. We just ensure we are on it.
+        let _ = run_git_command(vec!["checkout", "feature"], Some(local_path.to_str().unwrap()), vec![]);
+
+        // Add commit to origin/feature
+        let file_path = origin_path.join("new_file.txt");
+        fs::write(&file_path, "content").unwrap();
+        run_git_command(vec!["add", "new_file.txt"], Some(origin_path.to_str().unwrap()), vec![]).unwrap();
+        run_git_command(vec!["commit", "-m", "Feature commit"], Some(origin_path.to_str().unwrap()), vec![]).unwrap();
+
+        // Run pull_changes
+        let result = pull_changes(&local, None, None);
+        assert!(result.is_ok(), "pull_changes failed: {:?}", result.err());
+
+        // Verify local has the commit
+        let head = local.head().unwrap();
+        let commit = head.peel_to_commit().unwrap();
+        assert_eq!(commit.message().unwrap().trim(), "Feature commit");
+
+        // Cleanup
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn test_amend_commit() {
+        let root = get_temp_dir();
+        let _ = Repository::init(&root).unwrap();
+        let repo = Repository::open(&root).unwrap();
+
+        run_git_command(vec!["config", "user.name", "Test User"], Some(root.to_str().unwrap()), vec![]).unwrap();
+        run_git_command(vec!["config", "user.email", "test@example.com"], Some(root.to_str().unwrap()), vec![]).unwrap();
+
+        // Initial commit
+        let file_path = root.join("file.txt");
+        fs::write(&file_path, "v1").unwrap();
+        run_git_command(vec!["add", "."], Some(root.to_str().unwrap()), vec![]).unwrap();
+        create_commit(&repo, "Initial commit").unwrap();
+
+        // Amend
+        let result = amend_last_commit(&repo, "Amended message");
+        assert!(result.is_ok());
+
+        let head = repo.head().unwrap();
+        let commit = head.peel_to_commit().unwrap();
+        assert_eq!(commit.message().unwrap(), "Amended message");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn test_discard_all_changes() {
+        let root = get_temp_dir();
+        let _ = Repository::init(&root).unwrap();
+        let repo = Repository::open(&root).unwrap();
+
+        run_git_command(vec!["config", "user.name", "Test User"], Some(root.to_str().unwrap()), vec![]).unwrap();
+        run_git_command(vec!["config", "user.email", "test@example.com"], Some(root.to_str().unwrap()), vec![]).unwrap();
+        
+        fs::write(root.join("file.txt"), "v1").unwrap();
+        run_git_command(vec!["add", "."], Some(root.to_str().unwrap()), vec![]).unwrap();
+        create_commit(&repo, "Init").unwrap();
+
+        // Modify file
+        fs::write(root.join("file.txt"), "v2").unwrap();
+        
+        // Discard
+        discard_all_changes(&repo).unwrap();
+
+        let content = fs::read_to_string(root.join("file.txt")).unwrap();
+        assert_eq!(content, "v1");
+
+        let _ = fs::remove_dir_all(root);
+    }
 }

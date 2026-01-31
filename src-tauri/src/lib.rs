@@ -249,6 +249,34 @@ fn resolve_conflict(state: State<'_, App>, path: String, use_ours: bool) -> Resu
 }
 
 #[tauri::command]
+fn amend_commit(state: State<'_, App>, message: String) -> Result<String, String> {
+    let state = state.0.lock().unwrap();
+    let repo = state.repo.as_ref().ok_or("No repository open")?;
+    git_operations::amend_last_commit(repo, &message)
+}
+
+#[tauri::command]
+fn cherry_pick(state: State<'_, App>, sha: String) -> Result<(), String> {
+    let state = state.0.lock().unwrap();
+    let repo = state.repo.as_ref().ok_or("No repository open")?;
+    git_operations::cherry_pick(repo, &sha)
+}
+
+#[tauri::command]
+fn revert_commit(state: State<'_, App>, sha: String) -> Result<(), String> {
+    let state = state.0.lock().unwrap();
+    let repo = state.repo.as_ref().ok_or("No repository open")?;
+    git_operations::revert_commit(repo, &sha)
+}
+
+#[tauri::command]
+fn discard_all_changes(state: State<'_, App>) -> Result<(), String> {
+    let state = state.0.lock().unwrap();
+    let repo = state.repo.as_ref().ok_or("No repository open")?;
+    git_operations::discard_all_changes(repo)
+}
+
+#[tauri::command]
 fn get_settings(state: State<'_, App>) -> Result<Settings, String> {
     let state = state.0.lock().unwrap();
     Ok(state.settings.clone())
@@ -313,6 +341,10 @@ pub fn run() {
             clone_repository,
             get_repository_status,
             create_commit,
+            amend_commit,
+            cherry_pick,
+            revert_commit,
+            discard_all_changes,
             stage_files,
             unstage_files,
             discard_changes,
