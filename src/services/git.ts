@@ -310,5 +310,11 @@ export const gitService = {
   async getCurrentRepoInfo(): Promise<RepositoryInfo | null> {
     return await invoke("get_current_repo_info");
   },
+  /**
+   * 取得多個倉庫的資訊
+   */
+  async getRepositoriesInfo(paths: string[]): Promise<RepositoryInfo[]> {
+    return await invoke("get_repositories_info", { paths });
+  },
 };
 

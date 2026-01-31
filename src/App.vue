@@ -11,6 +11,7 @@ const commits = ref<CommitInfo[]>([]);
 const stashes = ref<StashInfo[]>([]);
 const conflicts = ref<ConflictInfo[]>([]);
 const settings = ref<Settings | null>(null);
+const recentRepoInfos = ref<RepositoryInfo[]>([]);
 const diffs = ref<DiffInfo[]>([]);
 
 const commitMessage = ref("");
@@ -29,6 +30,18 @@ const showSettingsModal = ref(false);
 const showBranchModal = ref(false);
 const newBranchName = ref("");
 const showRecentRepos = ref(false);
+
+watch(showRecentRepos, async (isOpen) => {
+  if (isOpen && settings.value?.recent_repositories.length) {
+    try {
+      const infos = await gitService.getRepositoriesInfo(settings.value.recent_repositories);
+      recentRepoInfos.value = infos;
+    } catch (err) {
+      console.error("Failed to fetch recent repo infos", err);
+    }
+  }
+});
+
 const dropdownRef = ref<HTMLElement | null>(null);
 const amendCommit = ref(false);
 const searchCommitQuery = ref("");
@@ -588,9 +601,21 @@ onUnmounted(() => {
                    @click="handleOpenRepo(path)"
                    class="px-4 py-2.5 hover:bg-muted cursor-pointer transition-safe group flex flex-col gap-0.5"
                    :class="{ 'bg-accent/5': repoInfo?.path === path }">
-                <div class="text-sm font-semibold truncate flex items-center gap-2">
-                  <span v-if="repoInfo?.path === path" class="w-1.5 h-1.5 rounded-full bg-accent"></span>
-                  {{ path.split('/').pop() }}
+                <div class="text-sm font-semibold truncate flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2 truncate">
+                    <span v-if="repoInfo?.path === path" class="w-1.5 h-1.5 rounded-full bg-accent"></span>
+                    {{ path.split('/').pop() }}
+                  </div>
+                  <!-- Status Indicators -->
+                  <div v-if="recentRepoInfos.find(r => r.path === path)" class="flex items-center gap-1.5 flex-shrink-0">
+                    <span v-if="recentRepoInfos.find(r => r.path === path)?.ahead" class="text-[10px] font-bold text-success flex items-center gap-0.5" title="Unpushed commits">
+                      ↑{{ recentRepoInfos.find(r => r.path === path)?.ahead }}
+                    </span>
+                    <span v-if="recentRepoInfos.find(r => r.path === path)?.behind" class="text-[10px] font-bold text-error flex items-center gap-0.5" title="Unpulled commits">
+                      ↓{{ recentRepoInfos.find(r => r.path === path)?.behind }}
+                    </span>
+                    <span v-if="recentRepoInfos.find(r => r.path === path)?.is_dirty" class="w-1.5 h-1.5 rounded-full bg-accent/40" title="Uncommitted changes"></span>
+                  </div>
                 </div>
                 <div class="text-[10px] text-muted-foreground truncate font-mono">{{ path }}</div>
               </div>

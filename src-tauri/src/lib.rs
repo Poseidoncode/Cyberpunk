@@ -309,6 +309,29 @@ fn get_remote_url(state: State<'_, App>, name: String) -> Result<String, String>
 }
 
 #[tauri::command]
+async fn get_repositories_info(paths: Vec<String>) -> Result<Vec<RepositoryInfo>, String> {
+    let mut results = Vec::new();
+    for path in paths {
+        if let Ok(repo) = git_operations::open_repository(&path) {
+            if let Ok(info) = git_operations::get_repository_info(&repo) {
+                results.push(info);
+                continue;
+            }
+        }
+        // If it fails, we still want a placeholder or just skip. 
+        // Let's at least provide the path.
+        results.push(RepositoryInfo {
+            path,
+            current_branch: "unknown".to_string(),
+            is_dirty: false,
+            ahead: 0,
+            behind: 0,
+        });
+    }
+    Ok(results)
+}
+
+#[tauri::command]
 fn get_current_repo_info(state: State<'_, App>) -> Result<Option<RepositoryInfo>, String> {
     let state = state.0.lock().unwrap();
     if let Some(repo) = state.repo.as_ref() {
@@ -367,6 +390,7 @@ pub fn run() {
             set_remote_url,
             get_remote_url,
             get_current_repo_info,
+            get_repositories_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
