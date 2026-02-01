@@ -823,7 +823,7 @@ onUnmounted(() => {
                  class="p-3 rounded-lg border border-transparent hover:border-border cursor-pointer transition-safe"
                  :class="{ 'border-accent bg-accent/5': selectedCommit?.sha === commit.sha }">
               <div class="text-sm font-semibold truncate mb-1.5 flex items-center gap-2" :class="{ 'text-accent': selectedCommit?.sha === commit.sha }">
-                <span v-if="repoInfo && repoInfo.ahead > 0 && commits.findIndex(c => c.sha === commit.sha) < repoInfo.ahead" 
+                <span v-if="!commit.is_pushed" 
                       class="text-success font-bold text-xs" title="Unpushed commit">↑</span>
                 {{ commit.message }}
               </div>

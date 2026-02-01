@@ -516,6 +516,21 @@ pub fn checkout_branch(repo: &Repository, name: &str) -> Result<(), String> {
 }
 
 pub fn get_commit_history(repo: &Repository, limit: usize) -> Result<Vec<CommitInfo>, String> {
+    let head = repo.head().ok();
+    
+    // Get upstream OID to check for pushed status
+    let upstream_oid = head.as_ref().and_then(|h| {
+        if h.is_branch() {
+            h.name().and_then(|name| {
+                repo.branch_upstream_name(name).ok().and_then(|upstream| {
+                    repo.find_reference(upstream.as_str().unwrap()).ok().and_then(|r| r.target())
+                })
+            })
+        } else {
+            None
+        }
+    });
+
     let mut revwalk = repo
         .revwalk()
         .map_err(|e| format!("Failed to create revwalk: {}", e))?;
@@ -536,12 +551,20 @@ pub fn get_commit_history(repo: &Repository, limit: usize) -> Result<Vec<CommitI
             .find_commit(oid)
             .map_err(|e| format!("Failed to find commit: {}", e))?;
 
+        // Logic: if upstream can reach this commit, it is pushed.
+        let is_pushed = if let Some(u_oid) = upstream_oid {
+            repo.graph_descendant_of(u_oid, oid).unwrap_or(false) || u_oid == oid
+        } else {
+            false
+        };
+
         commits.push(CommitInfo {
             sha: commit.id().to_string(),
             message: commit.message().unwrap_or("").to_string(),
             author: commit.author().name().unwrap_or("Unknown").to_string(),
             email: commit.author().email().unwrap_or("").to_string(),
             timestamp: commit.time().seconds(),
+            is_pushed,
         });
     }
 

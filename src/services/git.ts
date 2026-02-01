@@ -34,6 +34,7 @@ export interface CommitInfo {
   author: string;
   email: string;
   timestamp: number; // epoch 秒
+  is_pushed: boolean;
 }
 
 /**

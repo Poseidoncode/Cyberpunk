@@ -23,6 +23,7 @@ pub struct CommitInfo {
     pub author: String,
     pub email: String,
     pub timestamp: i64,
+    pub is_pushed: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

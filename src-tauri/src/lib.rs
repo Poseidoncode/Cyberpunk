@@ -61,19 +61,33 @@ fn open_repository(
     path: String,
 ) -> Result<RepositoryInfo, String> {
     let mut state = state.0.lock().unwrap();
-    let repo = git_operations::open_repository(&path)?;
-    let info = git_operations::get_repository_info(&repo)?;
-    state.repo = Some(repo);
-    // Add to recent repositories if not already there
-    if !state.settings.recent_repositories.contains(&path) {
-        state.settings.recent_repositories.insert(0, path.clone());
-        if state.settings.recent_repositories.len() > 10 {
-            state.settings.recent_repositories.truncate(10);
+    match git_operations::open_repository(&path) {
+        Ok(repo) => {
+            let info = git_operations::get_repository_info(&repo)?;
+            state.repo = Some(repo);
+            // Add to recent repositories if not already there
+            if !state.settings.recent_repositories.contains(&path) {
+                state.settings.recent_repositories.insert(0, path.clone());
+                if state.settings.recent_repositories.len() > 10 {
+                    state.settings.recent_repositories.truncate(10);
+                }
+            }
+            state.settings.last_opened_repository = Some(path);
+            save_settings_to_disk(&state, &app_handle)?;
+            Ok(info)
+        }
+        Err(e) => {
+            if !std::path::Path::new(&path).exists() {
+                state.settings.recent_repositories.retain(|p| p != &path);
+                if state.settings.last_opened_repository == Some(path) {
+                    state.settings.last_opened_repository = None;
+                }
+                let _ = save_settings_to_disk(&state, &app_handle);
+                return Err(format!("Repository path not found. Removed from list."));
+            }
+            Err(e)
         }
     }
-    state.settings.last_opened_repository = Some(path);
-    save_settings_to_disk(&state, &app_handle)?;
-    Ok(info)
 }
 
 #[tauri::command]
@@ -309,17 +323,30 @@ fn get_remote_url(state: State<'_, App>, name: String) -> Result<String, String>
 }
 
 #[tauri::command]
-async fn get_repositories_info(paths: Vec<String>) -> Result<Vec<RepositoryInfo>, String> {
+async fn get_repositories_info(
+    state: State<'_, App>,
+    app_handle: tauri::AppHandle,
+    paths: Vec<String>,
+) -> Result<Vec<RepositoryInfo>, String> {
     let mut results = Vec::new();
+    let mut to_remove = Vec::new();
+
     for path in paths {
-        if let Ok(repo) = git_operations::open_repository(&path) {
-            if let Ok(info) = git_operations::get_repository_info(&repo) {
-                results.push(info);
-                continue;
+        match git_operations::open_repository(&path) {
+            Ok(repo) => {
+                if let Ok(info) = git_operations::get_repository_info(&repo) {
+                    results.push(info);
+                    continue;
+                }
+            }
+            Err(_) => {
+                if !std::path::Path::new(&path).exists() {
+                    to_remove.push(path.clone());
+                    continue;
+                }
             }
         }
-        // If it fails, we still want a placeholder or just skip. 
-        // Let's at least provide the path.
+        // Fallback for valid paths that can't be opened or other errors
         results.push(RepositoryInfo {
             path,
             current_branch: "unknown".to_string(),
@@ -328,6 +355,13 @@ async fn get_repositories_info(paths: Vec<String>) -> Result<Vec<RepositoryInfo>
             behind: 0,
         });
     }
+
+    if !to_remove.is_empty() {
+        let mut state = state.0.lock().unwrap();
+        state.settings.recent_repositories.retain(|p| !to_remove.contains(p));
+        let _ = save_settings_to_disk(&state, &app_handle);
+    }
+
     Ok(results)
 }
 
