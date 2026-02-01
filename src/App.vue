@@ -971,12 +971,10 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Global Loading -->
-    <div v-if="loading" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]">
-      <div class="bg-card rounded-2xl shadow-xl px-8 py-6 flex items-center gap-4 border border-border">
-        <div class="w-6 h-6 border-3 border-accent border-t-transparent rounded-full animate-spin"></div>
-        <span class="text-sm font-semibold text-foreground">Processing...</span>
-      </div>
+    <!-- Loading Indicator (右上角小圈圈) -->
+    <div v-if="loading" class="fixed top-4 right-4 z-[100] flex items-center gap-2 bg-card/95 backdrop-blur-sm px-3 py-2 rounded-lg shadow-lg border border-border">
+      <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+      <span class="text-xs font-medium text-muted-foreground">Loading...</span>
     </div>
   </div>
 </template>
