@@ -88,14 +88,8 @@ npm run build
 
 ---
 
-## 貢獻/開發
-1. **Fork 並建立分支**
-2. 修改或新增功能後請以 PR 方式提交（建議對 src/ 或 src-tauri/ 進行對應 JSDoc/Rustdoc 補全）
-3. 請確保代碼乾淨；TypeScript/Lint、Rust Clippy 經過檢查
-
-歡迎 PR/議題討論，讓本專案更完善！
-
----
+## 資安備註
+關於 `glib` 依賴項的資安漏洞 (GHSA-wrw7-89jp-8q8g) 調查結果，請參閱 [SECURITY_GLIB.md](./SECURITY_GLIB.md)。
 
 ## 特別鳴謝
 本專案受到不同 CLI 風格專案、GitHub Desktop、tauri-starter 等開源專案啟發與參考。
