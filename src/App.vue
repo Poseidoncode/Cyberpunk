@@ -47,14 +47,52 @@ const amendCommit = ref(false);
 const searchCommitQuery = ref("");
 
 const getRepoName = (path: string) => {
-  if (!path) return "";
-  const cleanPath = path.replace(/[/\\]$/, '');
-  return cleanPath.split(/[/\\]/).pop() || path;
+  if (!path || path.trim() === "") return "";
+  
+  // 移除尾部的斜線
+  const cleanPath = path.replace(/[/\\]+$/, '');
+  
+  // 如果路徑以 .git 結尾，取父目錄名
+  if (cleanPath.endsWith('.git')) {
+    const withoutGit = cleanPath.slice(0, -4).replace(/[/\\]+$/, '');
+    const parts = withoutGit.split(/[/\\]/);
+    return parts[parts.length - 1] || "";
+  }
+  
+  // 取最後一個路徑段
+  const parts = cleanPath.split(/[/\\]/);
+  const lastPart = parts[parts.length - 1];
+  
+  // 如果最後一部分看起來不像是目錄名（太短或只是一個點），返回倒數第二個
+  if (!lastPart || lastPart === '.' || lastPart === '..') {
+    return parts[parts.length - 2] || path;
+  }
+  
+  return lastPart || path;
 };
 
 const currentProjectName = computed(() => {
   if (!repoInfo.value) return "";
-  return getRepoName(repoInfo.value.path);
+  
+  const path = repoInfo.value.path;
+  const name = getRepoName(path);
+  
+  // 額外驗證：如果得到的名字和分支名相同，可能路徑有問題
+  // 嘗試使用完整路徑來獲取專案名
+  if (name === repoInfo.value.current_branch) {
+    // 路徑可能有問題，嘗試其他方法
+    console.warn('[WARNING] Project name equals branch name, path might be incorrect:', path);
+    
+    // 如果路徑包含斜線，嘗試從完整路徑中提取
+    if (path && (path.includes('/') || path.includes('\\\\'))) {
+      return getRepoName(path);
+    }
+    
+    // 如果實在無法獲取，使用路徑本身
+    return path || "";
+  }
+  
+  return name;
 });
 
 watch(currentProjectName, (name) => {

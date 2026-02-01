@@ -101,11 +101,16 @@ pub fn get_repository_info(repo: &Repository) -> Result<RepositoryInfo, String> 
 
     let is_dirty = !statuses.is_empty();
 
-    let path = repo
+    let mut path = repo
         .workdir()
         .unwrap_or_else(|| repo.path())
         .to_string_lossy()
         .to_string();
+    
+    // 移除末尾斜線，確保路徑格式一致
+    while path.ends_with('/') || path.ends_with('\\') {
+        path.pop();
+    }
 
     Ok(RepositoryInfo {
         path,
