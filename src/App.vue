@@ -46,9 +46,15 @@ const dropdownRef = ref<HTMLElement | null>(null);
 const amendCommit = ref(false);
 const searchCommitQuery = ref("");
 
+const getRepoName = (path: string) => {
+  if (!path) return "";
+  const cleanPath = path.replace(/[/\\]$/, '');
+  return cleanPath.split(/[/\\]/).pop() || path;
+};
+
 const currentProjectName = computed(() => {
   if (!repoInfo.value) return "";
-  return repoInfo.value.path.split('/').pop() || "";
+  return getRepoName(repoInfo.value.path);
 });
 
 watch(currentProjectName, (name) => {
@@ -576,7 +582,7 @@ onUnmounted(() => {
         <div ref="dropdownRef" class="relative items-center gap-2 px-3 py-1.5 rounded-lg transition-safe" :class="{ 'bg-muted': showRecentRepos }">
           <div class="flex items-center gap-2 cursor-pointer" @click="showRecentRepos = !showRecentRepos">
             <span class="text-muted-foreground mr-1">Repository:</span>
-            <span class="font-semibold gradient-text">{{ repoInfo ? repoInfo.path.split('/').pop() : 'None' }}</span>
+            <span class="font-semibold gradient-text">{{ repoInfo ? currentProjectName : 'None' }}</span>
             <div v-if="repoInfo && (repoInfo.ahead > 0 || repoInfo.behind > 0)" class="flex items-center gap-2 ml-1 px-2 py-0.5 bg-muted/50 rounded-full border border-border/50">
               <span v-if="repoInfo.ahead > 0" class="text-[10px] font-bold text-success flex items-center gap-0.5" title="Unpushed commits">
                 ↑<span>{{ repoInfo.ahead }}</span>
@@ -604,7 +610,7 @@ onUnmounted(() => {
                 <div class="text-sm font-semibold truncate flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2 truncate">
                     <span v-if="repoInfo?.path === path" class="w-1.5 h-1.5 rounded-full bg-accent"></span>
-                    {{ path.split('/').pop() }}
+                    {{ getRepoName(path) }}
                   </div>
                   <!-- Status Indicators -->
                   <div v-if="recentRepoInfos.find(r => r.path === path)" class="flex items-center gap-1.5 flex-shrink-0">
@@ -919,7 +925,7 @@ onUnmounted(() => {
                  class="group flex items-center gap-4 p-4 bg-card border border-border rounded-xl hover:border-accent hover:shadow-md cursor-pointer transition-safe">
               <span class="text-accent text-xl">›</span>
               <div class="flex-1 min-w-0">
-                <div class="text-foreground font-semibold truncate text-sm">{{ path.split('/').pop() }}</div>
+                <div class="text-foreground font-semibold truncate text-sm">{{ getRepoName(path) }}</div>
                 <div class="text-muted-foreground text-xs truncate font-mono mt-0.5">{{ path }}</div>
               </div>
               <span class="text-muted-foreground group-hover:text-accent transition-safe text-xl">→</span>
