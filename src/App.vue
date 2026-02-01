@@ -645,11 +645,9 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- Center Title (App + Project Name) -->
+      <!-- Center Title (Project Name) -->
       <div v-if="repoInfo" class="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2 pointer-events-none">
-        <span class="text-xs font-bold text-muted-foreground uppercase tracking-wider">Cyberpunk</span>
-        <span class="text-xs text-border">/</span>
-        <span class="text-sm font-bold text-accent">{{ currentProjectName }}</span>
+        <span class="text-xs font-bold text-muted-foreground uppercase tracking-wider">{{ currentProjectName }}</span>
       </div>
     </header>
 
