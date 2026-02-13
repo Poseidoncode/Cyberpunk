@@ -19,9 +19,22 @@ const getLineBg = (line: string) => {
   return 'transparent';
 };
 
-const parseLine = (line: string) => {
-  // Vue's {{ }} already prevents XSS by escaping content
-  return line;
+const MAX_LINES_PER_FILE = 500;
+
+const getLines = (diffText: string) => {
+  const lines = diffText.split('\n');
+  if (lines.length > MAX_LINES_PER_FILE) {
+    return {
+      visible: lines.slice(0, MAX_LINES_PER_FILE),
+      truncated: true,
+      count: lines.length
+    };
+  }
+  return {
+    visible: lines,
+    truncated: false,
+    count: lines.length
+  };
 };
 </script>
 
@@ -42,11 +55,14 @@ const parseLine = (line: string) => {
         </span>
       </div>
       <div class="diff-content font-mono text-[11px] bg-card overflow-hidden">
-        <div v-for="(line, j) in diff.diff_text.split('\n')" :key="j"
+        <div v-for="(line, j) in getLines(diff.diff_text).visible" :key="j"
              class="flex group hover:bg-muted/30 transition-colors border-l-4 border-transparent"
              :style="{ color: getLineColor(line), backgroundColor: getLineBg(line), borderLeftColor: line.startsWith('+') ? 'var(--success)' : (line.startsWith('-') ? 'var(--error)' : 'transparent') }">
           <span class="w-12 text-right pr-4 py-0.5 text-muted-foreground/40 select-none border-r border-border/10 group-hover:text-muted-foreground transition-colors">{{ j + 1 }}</span>
           <span class="flex-1 px-4 py-0.5 whitespace-pre-wrap break-all leading-relaxed">{{ parseLine(line) }}</span>
+        </div>
+        <div v-if="getLines(diff.diff_text).truncated" class="p-4 text-center bg-muted/20 text-muted-foreground text-[10px] italic border-t border-border/10">
+          ... Showing only first {{ MAX_LINES_PER_FILE }} of {{ getLines(diff.diff_text).count }} lines. File too large to display fully.
         </div>
       </div>
     </div>

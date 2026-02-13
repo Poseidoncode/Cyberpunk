@@ -56,8 +56,16 @@ fn run_git_command(
 }
 
 fn is_safe_git_arg(arg: &str) -> bool {
-    // Prevent common shell/command injection patterns
-    !arg.contains(' ') && !arg.contains(';') && !arg.contains('&') && !arg.contains('|') && !arg.contains('`') && !arg.contains('$')
+    // Prevent common shell/command injection patterns and flag injection
+    !arg.is_empty() && 
+    !arg.starts_with('-') && 
+    !arg.contains(' ') && 
+    !arg.contains(';') && 
+    !arg.contains('&') && 
+    !arg.contains('|') && 
+    !arg.contains('`') && 
+    !arg.contains('$') &&
+    !arg.contains('\\')
 }
 
 pub fn clone_repository(
@@ -66,55 +74,66 @@ pub fn clone_repository(
     ssh_key_path: Option<&str>,
     _ssh_passphrase: Option<&str>,
 ) -> Result<Repository, String> {
-    if url.contains(' ') || url.contains(';') {
+    if url.contains(' ') || url.contains(';') || url.starts_with('-') {
         return Err("Invalid clone URL".to_string());
     }
     
     let mut envs = Vec::new();
-// ... (rest of the function)
     if let Some(key) = ssh_key_path {
         if !key.trim().is_empty() {
             let expanded_path = if key.starts_with("~/") {
-                key.replacen("~", &std::env::var("HOME").unwrap_or_default(), 1)
+                let home = std::env::var("HOME").map_err(|_| "Could not find HOME directory".to_string())?;
+                key.replacen("~", &home, 1)
             } else {
                 key.to_string()
             };
+            // Escape double quotes in path to prevent injection in GIT_SSH_COMMAND
+            let escaped_path = expanded_path.replace('"', "\\\"");
             envs.push((
                 "GIT_SSH_COMMAND",
-                format!("ssh -i \"{}\" -o IdentitiesOnly=yes", expanded_path),
+                format!("ssh -i \"{}\" -o IdentitiesOnly=yes", escaped_path),
             ));
         }
     }
-    run_git_command(vec!["clone", url, path], None, envs)?;
+    run_git_command(vec!["clone", "--", url, path], None, envs)?;
     open_repository(path)
 }
 
 pub fn get_repository_info(repo: &Repository) -> Result<RepositoryInfo, String> {
-    let head = repo
-        .head()
-        .map_err(|e| format!("Failed to get HEAD: {}", e))?;
-
-    let current_branch = if head.is_branch() {
-        head.shorthand().unwrap_or("unknown").to_string()
-    } else {
-        "detached HEAD".to_string()
-    };
-
     let mut ahead = 0;
     let mut behind = 0;
+    let mut current_branch = "unknown".to_string();
 
-    if head.is_branch() {
-        let local_name = head.name().unwrap();
-        if let Ok(upstream) = repo.branch_upstream_name(local_name) {
-            let upstream_name = upstream.as_str().unwrap();
+    match repo.head() {
+        Ok(head) => {
+            current_branch = if head.is_branch() {
+                head.shorthand().unwrap_or("unknown").to_string()
+            } else {
+                "detached HEAD".to_string()
+            };
 
-            let local_oid = head.target().unwrap();
-            if let Ok(upstream_ref) = repo.find_reference(upstream_name) {
-                let upstream_oid = upstream_ref.target().unwrap();
-
-                if let Ok((a, b)) = repo.graph_ahead_behind(local_oid, upstream_oid) {
-                    ahead = a;
-                    behind = b;
+            if head.is_branch() {
+                if let (Some(local_name), Some(local_oid)) = (head.name(), head.target()) {
+                    if let Ok(upstream) = repo.branch_upstream_name(local_name) {
+                        if let Some(upstream_name) = upstream.as_str() {
+                            if let Ok(upstream_ref) = repo.find_reference(upstream_name) {
+                                if let Some(upstream_oid) = upstream_ref.target() {
+                                    if let Ok((a, b)) = repo.graph_ahead_behind(local_oid, upstream_oid) {
+                                        ahead = a;
+                                        behind = b;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(_) => {
+            // Probably an unborn branch or empty repo
+            if let Ok(head_ref) = repo.find_reference("HEAD") {
+                if let Some(name) = head_ref.symbolic_target() {
+                    current_branch = name.strip_prefix("refs/heads/").unwrap_or(name).to_string();
                 }
             }
         }
@@ -128,9 +147,8 @@ pub fn get_repository_info(repo: &Repository) -> Result<RepositoryInfo, String> 
 
     let mut path = repo
         .workdir()
-        .unwrap_or_else(|| repo.path())
-        .to_string_lossy()
-        .to_string();
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| repo.path().to_string_lossy().to_string());
     
     // 移除末尾斜線，確保路徑格式一致
     while path.ends_with('/') || path.ends_with('\\') {
@@ -264,8 +282,8 @@ pub fn create_safety_ref(repo: &Repository, action_name: &str) -> Result<(), Str
     let commit = head.peel_to_commit().map_err(|e| e.to_string())?;
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     // Use a specific namespace for safety refs
     let ref_name = format!("refs/safety/{}/{}", action_name, timestamp);
     repo.reference(&ref_name, commit.id(), true, &format!("safety snapshot before {}", action_name))
@@ -276,7 +294,6 @@ pub fn create_safety_ref(repo: &Repository, action_name: &str) -> Result<(), Str
 pub fn amend_last_commit(repo: &Repository, message: &str) -> Result<String, String> {
     create_safety_ref(repo, "amend")?;
     let mut index = repo
-// ... (rest of the function)
         .index()
         .map_err(|e| format!("Failed to get index: {}", e))?;
 
@@ -332,8 +349,9 @@ pub fn cherry_pick(repo: &Repository, sha: &str) -> Result<(), String> {
     let tree_id = index.write_tree().map_err(|e| e.to_string())?;
     let tree = repo.find_tree(tree_id).map_err(|e| e.to_string())?;
     let signature = repo.signature().map_err(|e| e.to_string())?;
-    let head = repo.head().unwrap();
-    let parent = head.peel_to_commit().unwrap();
+    
+    let head = repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
+    let parent = head.peel_to_commit().map_err(|e| format!("Failed to peel HEAD: {}", e))?;
 
     repo.commit(
         Some("HEAD"),
@@ -366,8 +384,9 @@ pub fn revert_commit(repo: &Repository, sha: &str) -> Result<(), String> {
     let tree_id = index.write_tree().map_err(|e| e.to_string())?;
     let tree = repo.find_tree(tree_id).map_err(|e| e.to_string())?;
     let signature = repo.signature().map_err(|e| e.to_string())?;
-    let head = repo.head().unwrap();
-    let parent = head.peel_to_commit().unwrap();
+    
+    let head = repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
+    let parent = head.peel_to_commit().map_err(|e| format!("Failed to peel HEAD: {}", e))?;
 
     repo.commit(
         Some("HEAD"),
@@ -418,7 +437,6 @@ pub fn create_branch(repo: &Repository, name: &str) -> Result<(), String> {
         return Err("Invalid branch name".to_string());
     }
     let head = repo
-// ... (rest of the function)
         .head()
         .map_err(|e| format!("Failed to get HEAD: {}", e))?;
     let commit = head
@@ -579,7 +597,6 @@ pub fn checkout_branch(repo: &Repository, name: &str) -> Result<(), String> {
         return Err("Invalid branch name".to_string());
     }
     let obj = repo
-// ... (rest of the function)
         .revparse_single(&format!("refs/heads/{}", name))
         .map_err(|e| format!("Failed to find branch: {}", e))?;
 
@@ -600,7 +617,7 @@ pub fn get_commit_history(repo: &Repository, limit: usize) -> Result<Vec<CommitI
         if h.is_branch() {
             h.name().and_then(|name| {
                 repo.branch_upstream_name(name).ok().and_then(|upstream| {
-                    repo.find_reference(upstream.as_str().unwrap()).ok().and_then(|r| r.target())
+                    upstream.as_str().and_then(|u_name| repo.find_reference(u_name).ok()).and_then(|r| r.target())
                 })
             })
         } else {

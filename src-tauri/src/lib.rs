@@ -168,28 +168,51 @@ fn open_repository(
 }
 
 #[tauri::command]
-fn clone_repository(
+async fn clone_repository(
     state: State<'_, App>,
     app_handle: tauri::AppHandle,
     options: CloneOptions,
 ) -> AppResult<String> {
-    let mut state_lock = state.0.lock().map_err(|_| AppError::Lock("Failed to acquire lock".to_string()))?;
-    let repo = git_operations::clone_repository(
-        &options.url,
-        &options.path,
-        state_lock.settings.ssh_key_path.as_deref(),
-        state_lock.settings.ssh_passphrase.as_deref(),
-    )?;
-    let path = options.path.clone();
-    state_lock.repo = Some(repo);
-    state_lock.watcher = start_watcher(app_handle.clone(), &path);
+    let (ssh_key, ssh_pass) = {
+        let state_lock = state.0.lock().map_err(|_| AppError::Lock("Failed to acquire lock".to_string()))?;
+        (state_lock.settings.ssh_key_path.clone(), state_lock.settings.ssh_passphrase.clone())
+    };
 
-    if !state_lock.settings.recent_repositories.contains(&path) {
-        state_lock.settings.recent_repositories.insert(0, path.clone());
+    let url = options.url.clone();
+    let path = options.path.clone();
+
+    // Perform clone in a blocking thread to avoid freezing the async executor
+    let repo_path = path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        git_operations::clone_repository(
+            &url,
+            &repo_path,
+            ssh_key.as_deref(),
+            ssh_pass.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| AppError::Git(format!("Spawn error: {}", e)))?
+    .map_err(AppError::Git)?;
+
+    // Re-acquire lock to update state
+    let mut state_lock = state.0.lock().map_err(|_| AppError::Lock("Failed to acquire lock".to_string()))?;
+    
+    // Re-open repo in state
+    match git_operations::open_repository(&path) {
+        Ok(repo) => {
+            state_lock.repo = Some(repo);
+            state_lock.watcher = start_watcher(app_handle.clone(), &path);
+
+            if !state_lock.settings.recent_repositories.contains(&path) {
+                state_lock.settings.recent_repositories.insert(0, path.clone());
+            }
+            state_lock.settings.last_opened_repository = Some(path.clone());
+            save_settings_to_disk(&state_lock, &app_handle)?;
+            Ok(path)
+        }
+        Err(e) => Err(AppError::Git(e)),
     }
-    state_lock.settings.last_opened_repository = Some(path.clone());
-    save_settings_to_disk(&state_lock, &app_handle)?;
-    Ok(path)
 }
 
 #[tauri::command]
@@ -274,36 +297,66 @@ fn get_diff(state: State<'_, App>, file_path: Option<String>) -> AppResult<Vec<D
 }
 
 #[tauri::command]
-fn push_changes(state: State<'_, App>) -> AppResult<()> {
-    let state = state.0.lock().map_err(|_| AppError::Lock("Failed to acquire lock".to_string()))?;
-    let repo = state.repo.as_ref().ok_or(AppError::Git("No repository open".to_string()))?;
-    git_operations::push_changes(
-        repo,
-        state.settings.ssh_key_path.as_deref(),
-        state.settings.ssh_passphrase.as_deref(),
-    ).map_err(AppError::Git)
+async fn push_changes(state: State<'_, App>) -> AppResult<()> {
+    let (path, ssh_key, ssh_pass) = {
+        let state = state.0.lock().map_err(|_| AppError::Lock("Failed to acquire lock".to_string()))?;
+        let repo = state.repo.as_ref().ok_or(AppError::Git("No repository open".to_string()))?;
+        let path = repo.workdir().ok_or(AppError::Git("No workdir".to_string()))?.to_path_buf();
+        (path, state.settings.ssh_key_path.clone(), state.settings.ssh_passphrase.clone())
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let repo = git_operations::open_repository(path.to_str().ok_or("Invalid path")?)?;
+        git_operations::push_changes(
+            &repo,
+            ssh_key.as_deref(),
+            ssh_pass.as_deref(),
+        ).map_err(AppError::Git)
+    })
+    .await
+    .map_err(|e| AppError::Git(format!("Spawn error: {}", e)))?
 }
 
 #[tauri::command]
-fn pull_changes(state: State<'_, App>) -> AppResult<()> {
-    let state = state.0.lock().map_err(|_| AppError::Lock("Failed to acquire lock".to_string()))?;
-    let repo = state.repo.as_ref().ok_or(AppError::Git("No repository open".to_string()))?;
-    git_operations::pull_changes(
-        repo,
-        state.settings.ssh_key_path.as_deref(),
-        state.settings.ssh_passphrase.as_deref(),
-    ).map_err(AppError::Git)
+async fn pull_changes(state: State<'_, App>) -> AppResult<()> {
+    let (path, ssh_key, ssh_pass) = {
+        let state = state.0.lock().map_err(|_| AppError::Lock("Failed to acquire lock".to_string()))?;
+        let repo = state.repo.as_ref().ok_or(AppError::Git("No repository open".to_string()))?;
+        let path = repo.workdir().ok_or(AppError::Git("No workdir".to_string()))?.to_path_buf();
+        (path, state.settings.ssh_key_path.clone(), state.settings.ssh_passphrase.clone())
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let repo = git_operations::open_repository(path.to_str().ok_or("Invalid path")?)?;
+        git_operations::pull_changes(
+            &repo,
+            ssh_key.as_deref(),
+            ssh_pass.as_deref(),
+        ).map_err(AppError::Git)
+    })
+    .await
+    .map_err(|e| AppError::Git(format!("Spawn error: {}", e)))?
 }
 
 #[tauri::command]
-fn fetch_changes(state: State<'_, App>) -> AppResult<()> {
-    let state = state.0.lock().map_err(|_| AppError::Lock("Failed to acquire lock".to_string()))?;
-    let repo = state.repo.as_ref().ok_or(AppError::Git("No repository open".to_string()))?;
-    git_operations::fetch_changes(
-        repo,
-        state.settings.ssh_key_path.as_deref(),
-        state.settings.ssh_passphrase.as_deref(),
-    ).map_err(AppError::Git)
+async fn fetch_changes(state: State<'_, App>) -> AppResult<()> {
+    let (path, ssh_key, ssh_pass) = {
+        let state = state.0.lock().map_err(|_| AppError::Lock("Failed to acquire lock".to_string()))?;
+        let repo = state.repo.as_ref().ok_or(AppError::Git("No repository open".to_string()))?;
+        let path = repo.workdir().ok_or(AppError::Git("No workdir".to_string()))?.to_path_buf();
+        (path, state.settings.ssh_key_path.clone(), state.settings.ssh_passphrase.clone())
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let repo = git_operations::open_repository(path.to_str().ok_or("Invalid path")?)?;
+        git_operations::fetch_changes(
+            &repo,
+            ssh_key.as_deref(),
+            ssh_pass.as_deref(),
+        ).map_err(AppError::Git)
+    })
+    .await
+    .map_err(|e| AppError::Git(format!("Spawn error: {}", e)))?
 }
 
 #[tauri::command]
