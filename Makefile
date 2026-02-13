@@ -1,6 +1,6 @@
 # Cyberpunk Project Management Makefile
 
-.PHONY: help setup dev build clean check format lint
+.PHONY: help setup dev build dmg clean check format lint
 
 # 預設目標：顯示說明
 help:
@@ -10,7 +10,8 @@ help:
 	@echo "Targets:"
 	@echo "  setup    - Install all dependencies (npm & cargo)"
 	@echo "  dev      - Start the Tauri development environment"
-	@echo "  build    - Build the production application bundle"
+	@echo "  build    - Build the production application (.app)"
+	@echo "  dmg      - Build and package as DMG installer"
 	@echo "  check    - Run type checking and rust diagnostics"
 	@echo "  format   - Automatically format all source code"
 	@echo "  clean    - Remove build artifacts and temporary files"
@@ -26,11 +27,28 @@ setup:
 dev:
 	@echo "🚀 Starting Cyberpunk in dev mode..."
 	npm run tauri dev
-
-# 打包生產版本
+# 打包生產版本 (.app)
 build:
 	@echo "🏗️ Building production bundle..."
-	npm run tauri build
+	npm run tauri build -- --ci
+
+# 打包 DMG 安裝映像
+APP_NAME := Cyberpunk
+APP_PATH := src-tauri/target/release/bundle/macos/$(APP_NAME).app
+DMG_PATH := src-tauri/target/release/bundle/dmg/$(APP_NAME).dmg
+
+dmg: build
+	@echo "📦 Creating DMG installer..."
+	@mkdir -p src-tauri/target/release/bundle/dmg
+	@rm -f "$(DMG_PATH)"
+	@STAGING=$$(mktemp -d) && \
+		cp -R "$(APP_PATH)" "$$STAGING/" && \
+		ln -s /Applications "$$STAGING/Applications" && \
+		hdiutil create -volname "$(APP_NAME)" -srcfolder "$$STAGING" \
+			-ov -format UDZO "$(DMG_PATH)" && \
+		rm -rf "$$STAGING"
+	@echo "✅ DMG created: $(DMG_PATH)"
+
 
 # 靜態分析與檢查
 check:

@@ -43,6 +43,12 @@ impl From<String> for AppError {
     }
 }
 
+impl From<&str> for AppError {
+    fn from(err: &str) -> Self {
+        AppError::Git(err.to_string())
+    }
+}
+
 struct AppState {
     repo: Option<git2::Repository>,
     settings: Settings,
