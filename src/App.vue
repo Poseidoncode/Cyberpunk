@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
-import { gitService, type RepositoryInfo, type FileStatus, type BranchInfo, type CommitInfo, type StashInfo, type ConflictInfo, type Settings, type DiffInfo } from './services/git';
+import { gitService, type RepositoryInfo, type FileStatus, type BranchInfo, type CommitInfo, type StashInfo, type ConflictInfo, type Settings, type DiffInfo, type StageResult } from './services/git';
 import { open, ask, message } from '@tauri-apps/plugin-dialog';
 import DiffViewer from './components/DiffViewer.vue';
 
@@ -116,12 +116,14 @@ const toggleAllStaged = async () => {
   if (fileStatuses.value.length === 0) return;
   
   try {
-    // loading.value = true; // Removed to prevent flickering
     const paths = fileStatuses.value.map(f => f.path);
     if (allStaged.value) {
       await gitService.unstageFiles(paths);
     } else {
-      await gitService.stageFiles(paths);
+      const result: StageResult = await gitService.stageFiles(paths);
+      if (result.warnings.length > 0) {
+        error.value = result.warnings.join('\n');
+      }
     }
     await refreshRepo();
   } catch (err) {
@@ -335,7 +337,10 @@ const toggleStaged = async (file: FileStatus) => {
     if (file.staged) {
       await gitService.unstageFiles([file.path]);
     } else {
-      await gitService.stageFiles([file.path]);
+      const result: StageResult = await gitService.stageFiles([file.path]);
+      if (result.warnings.length > 0) {
+        error.value = result.warnings.join('\n');
+      }
     }
     await refreshRepo();
   } catch (err) {

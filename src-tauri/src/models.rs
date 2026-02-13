@@ -87,3 +87,9 @@ pub struct BranchOptions {
 pub struct StashOptions {
     pub message: Option<String>,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StageResult {
+    pub staged: Vec<String>,
+    pub warnings: Vec<String>,
+}

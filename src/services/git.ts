@@ -88,6 +88,14 @@ export interface Settings {
 }
 
 /**
+ * Stage 操作結果，支援部分成功
+ */
+export interface StageResult {
+  staged: string[];
+  warnings: string[];
+}
+
+/**
  * 提供所有 Git 前端操作的方法介面，實際會呼叫 Rust 後端 command
  */
 export const gitService = {
@@ -150,7 +158,7 @@ export const gitService = {
   /**
    * 將多個檔案加入暫存
    */
-  async stageFiles(files: string[]): Promise<void> {
+  async stageFiles(files: string[]): Promise<StageResult> {
     return await invoke("stage_files", { files });
   },
   /**

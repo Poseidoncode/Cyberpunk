@@ -3,7 +3,8 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::models::{
-    BranchInfo, CommitInfo, ConflictInfo, DiffInfo, FileStatus, RepositoryInfo, StashInfo,
+    BranchInfo, CommitInfo, ConflictInfo, DiffInfo, FileStatus, RepositoryInfo, StageResult,
+    StashInfo,
 };
 
 pub fn open_repository(path: &str) -> Result<Repository, String> {
@@ -168,22 +169,34 @@ pub fn get_status(repo: &Repository) -> Result<Vec<FileStatus>, String> {
     Ok(file_statuses)
 }
 
-pub fn stage_files(repo: &Repository, paths: Vec<String>) -> Result<(), String> {
+pub fn stage_files(repo: &Repository, paths: Vec<String>) -> Result<StageResult, String> {
     let mut index = repo
         .index()
         .map_err(|e| format!("Failed to get index: {}", e))?;
 
+    let workdir = repo.workdir().ok_or("No working directory found")?;
+    let mut staged = Vec::new();
+    let mut warnings = Vec::new();
+
     for path in paths {
-        index
-            .add_path(Path::new(&path))
-            .map_err(|e| format!("Failed to stage {}: {}", path, e))?;
+        let full_path = workdir.join(&path);
+        if full_path.exists() {
+            match index.add_path(Path::new(&path)) {
+                Ok(_) => staged.push(path),
+                Err(e) => warnings.push(format!("Failed to stage '{}': {}", path, e)),
+            }
+        } else {
+            // File was deleted externally — clean up index entry and record warning
+            let _ = index.remove_path(Path::new(&path));
+            warnings.push(format!("Skipped '{}': file not found (removed from index)", path));
+        }
     }
 
     index
         .write()
         .map_err(|e| format!("Failed to write index: {}", e))?;
 
-    Ok(())
+    Ok(StageResult { staged, warnings })
 }
 
 pub fn unstage_files(repo: &Repository, paths: Vec<String>) -> Result<(), String> {
@@ -191,8 +204,18 @@ pub fn unstage_files(repo: &Repository, paths: Vec<String>) -> Result<(), String
     let commit = head.and_then(|h| h.peel_to_commit().ok());
 
     if let Some(c) = commit {
-        repo.reset_default(Some(c.as_object()), paths.iter().map(|s| s.as_str()))
-            .map_err(|e| format!("Failed to unstage: {}", e))?;
+        // Try bulk reset first; if it fails, fall back to per-file reset
+        if repo
+            .reset_default(Some(c.as_object()), paths.iter().map(|s| s.as_str()))
+            .is_err()
+        {
+            for path in &paths {
+                let _ = repo.reset_default(
+                    Some(c.as_object()),
+                    std::iter::once(path.as_str()),
+                );
+            }
+        }
     } else {
         // No commits yet, just remove from index
         let mut index = repo

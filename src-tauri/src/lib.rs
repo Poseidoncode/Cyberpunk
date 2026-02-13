@@ -3,7 +3,7 @@ mod models;
 
 use models::{
     BranchInfo, BranchOptions, CloneOptions, CommitInfo, CommitOptions, ConflictInfo, DiffInfo,
-    FileStatus, RepositoryInfo, Settings, StashInfo, StashOptions,
+    FileStatus, RepositoryInfo, Settings, StageResult, StashInfo, StashOptions,
 };
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -124,15 +124,15 @@ fn get_repository_status(state: State<'_, App>) -> Result<Vec<FileStatus>, Strin
 fn create_commit(state: State<'_, App>, options: CommitOptions) -> Result<String, String> {
     let state = state.0.lock().unwrap();
     let repo = state.repo.as_ref().ok_or("No repository open")?;
-    // Note: frontend sends 'files' but create_commit in git_operations.rs doesn't take files yet.
-    // It assumes files are already staged.
-    // However, stage_files is called separately or we can stage them here.
-    git_operations::stage_files(repo, options.files)?;
+    let stage_result = git_operations::stage_files(repo, options.files)?;
+    if stage_result.staged.is_empty() && !stage_result.warnings.is_empty() {
+        return Err(format!("No files could be staged: {}", stage_result.warnings.join("; ")));
+    }
     git_operations::create_commit(repo, &options.message)
 }
 
 #[tauri::command]
-fn stage_files(state: State<'_, App>, files: Vec<String>) -> Result<(), String> {
+fn stage_files(state: State<'_, App>, files: Vec<String>) -> Result<StageResult, String> {
     let state = state.0.lock().unwrap();
     let repo = state.repo.as_ref().ok_or("No repository open")?;
     git_operations::stage_files(repo, files)
