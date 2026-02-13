@@ -19,6 +19,15 @@ const getLineBg = (line: string) => {
   return 'transparent';
 };
 
+const parseLine = (line: string) => {
+  if (!line) return '';
+  const firstChar = line.charAt(0);
+  if (firstChar === '+' || firstChar === '-' || firstChar === ' ') {
+    return line.substring(1);
+  }
+  return line;
+};
+
 const MAX_LINES_PER_FILE = 500;
 
 const getLines = (diffText: string) => {
