@@ -24,6 +24,7 @@ pub struct CommitInfo {
     pub email: String,
     pub timestamp: i64,
     pub is_pushed: bool,
+    pub parents: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

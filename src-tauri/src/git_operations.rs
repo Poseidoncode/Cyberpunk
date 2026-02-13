@@ -232,8 +232,27 @@ pub fn unstage_files(repo: &Repository, paths: Vec<String>) -> Result<(), String
     Ok(())
 }
 
+pub fn create_safety_ref(repo: &Repository, action_name: &str) -> Result<(), String> {
+    let head = match repo.head() {
+        Ok(h) => h,
+        Err(_) => return Ok(()), // No HEAD yet, nothing to snapshot
+    };
+    let commit = head.peel_to_commit().map_err(|e| e.to_string())?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    // Use a specific namespace for safety refs
+    let ref_name = format!("refs/safety/{}/{}", action_name, timestamp);
+    repo.reference(&ref_name, commit.id(), true, &format!("safety snapshot before {}", action_name))
+        .map_err(|e| format!("Failed to create safety ref: {}", e))?;
+    Ok(())
+}
+
 pub fn amend_last_commit(repo: &Repository, message: &str) -> Result<String, String> {
+    create_safety_ref(repo, "amend")?;
     let mut index = repo
+// ... (rest of the function)
         .index()
         .map_err(|e| format!("Failed to get index: {}", e))?;
 
@@ -272,6 +291,7 @@ pub fn amend_last_commit(repo: &Repository, message: &str) -> Result<String, Str
 }
 
 pub fn cherry_pick(repo: &Repository, sha: &str) -> Result<(), String> {
+    create_safety_ref(repo, "cherry-pick")?;
     let commit = repo
         .find_commit(git2::Oid::from_str(sha).map_err(|e| e.to_string())?)
         .map_err(|e| format!("Commit not found: {}", e))?;
@@ -305,6 +325,7 @@ pub fn cherry_pick(repo: &Repository, sha: &str) -> Result<(), String> {
 }
 
 pub fn revert_commit(repo: &Repository, sha: &str) -> Result<(), String> {
+    create_safety_ref(repo, "revert")?;
     let commit = repo
         .find_commit(git2::Oid::from_str(sha).map_err(|e| e.to_string())?)
         .map_err(|e| format!("Commit not found: {}", e))?;
@@ -360,6 +381,7 @@ pub fn discard_changes(repo: &Repository, path: &str) -> Result<(), String> {
 }
 
 pub fn discard_all_changes(repo: &Repository) -> Result<(), String> {
+    let _ = create_safety_ref(repo, "discard-all");
     let mut checkout_opts = git2::build::CheckoutBuilder::new();
     checkout_opts.force();
     repo.checkout_head(Some(&mut checkout_opts))
@@ -588,6 +610,7 @@ pub fn get_commit_history(repo: &Repository, limit: usize) -> Result<Vec<CommitI
             email: commit.author().email().unwrap_or("").to_string(),
             timestamp: commit.time().seconds(),
             is_pushed,
+            parents: commit.parent_ids().map(|id| id.to_string()).collect(),
         });
     }
 

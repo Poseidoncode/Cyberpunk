@@ -5,15 +5,54 @@ use models::{
     BranchInfo, BranchOptions, CloneOptions, CommitInfo, CommitOptions, ConflictInfo, DiffInfo,
     FileStatus, RepositoryInfo, Settings, StageResult, StashInfo, StashOptions,
 };
+use notify::{Config, RecursiveMode, Watcher};
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 struct AppState {
     repo: Option<git2::Repository>,
     settings: Settings,
+    watcher: Option<notify::RecommendedWatcher>,
 }
 
 struct App(Mutex<AppState>);
+
+fn start_watcher(app_handle: tauri::AppHandle, repo_path: &str) -> Option<notify::RecommendedWatcher> {
+    let path = std::path::Path::new(repo_path);
+    let git_path = path.join(".git");
+
+    if !git_path.exists() {
+        return None;
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    let mut watcher = notify::RecommendedWatcher::new(tx, Config::default()).ok()?;
+
+    // Watch key git files for state changes
+    let _ = watcher.watch(&git_path.join("index"), RecursiveMode::NonRecursive);
+    let _ = watcher.watch(&git_path.join("HEAD"), RecursiveMode::NonRecursive);
+    let _ = watcher.watch(&git_path.join("refs"), RecursiveMode::Recursive);
+
+    std::thread::spawn(move || {
+        // Simple debounce: wait a bit and clear the channel of rapid events
+        while let Ok(res) = rx.recv() {
+            match res {
+                Ok(_) => {
+                    // Give Git a moment to finish its IO
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    let _ = app_handle.emit("git-state-changed", ());
+
+                    // Drain the channel of immediate subsequent events
+                    while let Ok(_) = rx.try_recv() {}
+                }
+                Err(e) => eprintln!("watcher error: {:?}", e),
+            }
+        }
+    });
+
+    Some(watcher)
+}
 
 fn get_settings_path(app_handle: &tauri::AppHandle) -> std::path::PathBuf {
     let mut path = app_handle
@@ -65,6 +104,8 @@ fn open_repository(
         Ok(repo) => {
             let info = git_operations::get_repository_info(&repo)?;
             state.repo = Some(repo);
+            state.watcher = start_watcher(app_handle.clone(), &path);
+            
             // Add to recent repositories if not already there
             if !state.settings.recent_repositories.contains(&path) {
                 state.settings.recent_repositories.insert(0, path.clone());
@@ -105,6 +146,8 @@ fn clone_repository(
     )?;
     let path = options.path.clone();
     state_lock.repo = Some(repo);
+    state_lock.watcher = start_watcher(app_handle.clone(), &path);
+
     if !state_lock.settings.recent_repositories.contains(&path) {
         state_lock.settings.recent_repositories.insert(0, path.clone());
     }
@@ -383,12 +426,18 @@ pub fn run() {
             let app_handle = app.handle();
             let settings = load_settings_from_disk(app_handle);
             let mut repo = None;
+            let mut watcher = None;
             if let Some(path) = &settings.last_opened_repository {
                 if let Ok(opened_repo) = git_operations::open_repository(path) {
                     repo = Some(opened_repo);
+                    watcher = start_watcher(app_handle.clone(), path);
                 }
             }
-            app.manage(App(Mutex::new(AppState { repo, settings })));
+            app.manage(App(Mutex::new(AppState {
+                repo,
+                settings,
+                watcher,
+            })));
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())

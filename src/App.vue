@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import { gitService, type RepositoryInfo, type FileStatus, type BranchInfo, type CommitInfo, type StashInfo, type ConflictInfo, type Settings, type DiffInfo, type StageResult } from './services/git';
 import { open, ask, message } from '@tauri-apps/plugin-dialog';
+import { listen } from '@tauri-apps/api/event';
 import DiffViewer from './components/DiffViewer.vue';
 
 const repoInfo = ref<RepositoryInfo | null>(null);
@@ -168,6 +169,7 @@ const refreshRepo = async () => {
 };
 
 onMounted(async () => {
+  window.addEventListener('click', handleClickOutside);
   await fetchSettings();
   try {
     const info = await gitService.getCurrentRepoInfo();
@@ -177,6 +179,15 @@ onMounted(async () => {
   } catch (err) {
     console.error("Failed to fetch initial repo info", err);
   }
+
+  const unlisten = await listen('git-state-changed', () => {
+    refreshRepo();
+  });
+  
+  onUnmounted(() => {
+    unlisten();
+    window.removeEventListener('click', handleClickOutside);
+  });
 });
 
 watch([repoInfo, view], () => {
@@ -608,13 +619,6 @@ const handleClickOutside = (event: MouseEvent) => {
   }
 };
 
-onMounted(() => {
-  window.addEventListener('click', handleClickOutside);
-});
-
-onUnmounted(() => {
-  window.removeEventListener('click', handleClickOutside);
-});
 </script>
 
 <template>
