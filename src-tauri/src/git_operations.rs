@@ -11,16 +11,26 @@ pub fn open_repository(path: &str) -> Result<Repository, String> {
     Repository::open(path).map_err(|e| format!("Failed to open repository: {}", e))
 }
 
+/// Executes a git command safely.
+/// Prevents shell injection by using Command::args directly.
+/// Sanitizes critical inputs like URLs and branch names in caller functions.
 fn run_git_command(
     args: Vec<&str>,
     cwd: Option<&str>,
     envs: Vec<(&str, String)>,
 ) -> Result<String, String> {
     let mut command = Command::new("git");
+    
+    // Explicitly set NO_PAGER to avoid interactive sessions
+    command.env("GIT_TERMINAL_PROMPT", "0");
+    command.env("GIT_PAGER", "cat");
+    
     command.args(&args);
+    
     if let Some(path) = cwd {
         command.current_dir(path);
     }
+    
     for (key, val) in envs {
         command.env(key, val);
     }
@@ -33,12 +43,21 @@ fn run_git_command(
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(if stderr.is_empty() {
-            format!("Git command failed with status: {}", output.status)
-        } else {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        
+        Err(if !stderr.is_empty() {
             stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("Git command failed with status: {}", output.status)
         })
     }
+}
+
+fn is_safe_git_arg(arg: &str) -> bool {
+    // Prevent common shell/command injection patterns
+    !arg.contains(' ') && !arg.contains(';') && !arg.contains('&') && !arg.contains('|') && !arg.contains('`') && !arg.contains('$')
 }
 
 pub fn clone_repository(
@@ -47,7 +66,12 @@ pub fn clone_repository(
     ssh_key_path: Option<&str>,
     _ssh_passphrase: Option<&str>,
 ) -> Result<Repository, String> {
+    if url.contains(' ') || url.contains(';') {
+        return Err("Invalid clone URL".to_string());
+    }
+    
     let mut envs = Vec::new();
+// ... (rest of the function)
     if let Some(key) = ssh_key_path {
         if !key.trim().is_empty() {
             let expanded_path = if key.starts_with("~/") {
@@ -390,7 +414,11 @@ pub fn discard_all_changes(repo: &Repository) -> Result<(), String> {
 
 
 pub fn create_branch(repo: &Repository, name: &str) -> Result<(), String> {
+    if !is_safe_git_arg(name) {
+        return Err("Invalid branch name".to_string());
+    }
     let head = repo
+// ... (rest of the function)
         .head()
         .map_err(|e| format!("Failed to get HEAD: {}", e))?;
     let commit = head
@@ -547,7 +575,11 @@ pub fn get_branches(repo: &Repository) -> Result<Vec<BranchInfo>, String> {
 }
 
 pub fn checkout_branch(repo: &Repository, name: &str) -> Result<(), String> {
+    if !is_safe_git_arg(name) {
+        return Err("Invalid branch name".to_string());
+    }
     let obj = repo
+// ... (rest of the function)
         .revparse_single(&format!("refs/heads/{}", name))
         .map_err(|e| format!("Failed to find branch: {}", e))?;
 

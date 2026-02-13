@@ -6,36 +6,57 @@ defineProps<{
 }>();
 
 const getLineColor = (line: string) => {
-  if (line.startsWith('+')) return '#10B981'; // Emerald for additions
-  if (line.startsWith('-')) return '#EF4444'; // Red for deletions
-  if (line.startsWith('@@')) return '#64748B'; // Slate for metadata
-  return '#0F172A'; // Foreground for context
+  if (line.startsWith('+')) return 'var(--success)';
+  if (line.startsWith('-')) return 'var(--error)';
+  if (line.startsWith('@@')) return 'var(--muted-foreground)';
+  return 'var(--foreground)';
 };
 
 const getLineBg = (line: string) => {
-  if (line.startsWith('+')) return 'rgba(16, 185, 129, 0.05)'; // Light emerald bg
-  if (line.startsWith('-')) return 'rgba(239, 68, 68, 0.05)'; // Light red bg
+  if (line.startsWith('+')) return 'rgba(16, 185, 129, 0.08)'; 
+  if (line.startsWith('-')) return 'rgba(239, 68, 68, 0.08)';
+  if (line.startsWith('@@')) return 'rgba(100, 116, 139, 0.05)';
   return 'transparent';
+};
+
+const parseLine = (line: string) => {
+  // Vue's {{ }} already prevents XSS by escaping content
+  return line;
 };
 </script>
 
 <template>
-  <div v-if="diffs.length === 0" class="flex items-center justify-center p-16 text-muted-foreground text-sm">
+  <div v-if="diffs.length === 0" class="flex items-center justify-center p-16 text-muted-foreground text-sm italic">
     No differences to show
   </div>
-  <div v-else class="diff-viewer bg-background">
+  <div v-else class="diff-viewer bg-background select-text">
     <div v-for="(diff, i) in diffs" :key="i" class="diff-file border-b border-border last:border-b-0">
-      <div class="diff-file-header bg-muted px-4 py-3 border-b border-border font-sans text-xs flex justify-between items-center">
-        <span class="font-semibold text-foreground">{{ diff.path }}</span>
-        <span class="text-muted-foreground font-mono">
-          <span class="text-success">+{{ diff.additions }}</span>
-          <span class="mx-2">·</span>
-          <span class="text-error">-{{ diff.deletions }}</span>
+      <div class="diff-file-header bg-muted/50 backdrop-blur-sm sticky top-0 z-10 px-4 py-2.5 border-b border-border font-sans text-xs flex justify-between items-center shadow-sm">
+        <div class="flex items-center gap-3">
+          <span class="w-2 h-2 rounded-full" :class="{ 'bg-success': diff.additions > 0 && diff.deletions === 0, 'bg-error': diff.deletions > 0 && diff.additions === 0, 'bg-accent': diff.additions > 0 && diff.deletions > 0 }"></span>
+          <span class="font-bold text-foreground tracking-tight">{{ diff.path }}</span>
+        </div>
+        <span class="text-[10px] font-mono flex items-center gap-2">
+          <span class="text-success bg-success/10 px-1.5 py-0.5 rounded font-bold">+{{ diff.additions }}</span>
+          <span class="text-error bg-error/10 px-1.5 py-0.5 rounded font-bold">-{{ diff.deletions }}</span>
         </span>
       </div>
-      <pre class="diff-content p-4 font-mono text-xs overflow-auto bg-card"><div v-for="(line, j) in diff.diff_text.split('\n')" :key="j"
-             class="px-2 py-0.5 leading-relaxed"
-             :style="{ color: getLineColor(line), backgroundColor: getLineBg(line) }">{{ line }}</div></pre>
+      <div class="diff-content font-mono text-[11px] bg-card overflow-hidden">
+        <div v-for="(line, j) in diff.diff_text.split('\n')" :key="j"
+             class="flex group hover:bg-muted/30 transition-colors border-l-4 border-transparent"
+             :style="{ color: getLineColor(line), backgroundColor: getLineBg(line), borderLeftColor: line.startsWith('+') ? 'var(--success)' : (line.startsWith('-') ? 'var(--error)' : 'transparent') }">
+          <span class="w-12 text-right pr-4 py-0.5 text-muted-foreground/40 select-none border-r border-border/10 group-hover:text-muted-foreground transition-colors">{{ j + 1 }}</span>
+          <span class="flex-1 px-4 py-0.5 whitespace-pre-wrap break-all leading-relaxed">{{ parseLine(line) }}</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.diff-viewer {
+  --success: #10B981;
+  --error: #EF4444;
+  --accent: #3b82f6;
+}
+</style>

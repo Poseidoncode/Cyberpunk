@@ -823,24 +823,31 @@ const handleClickOutside = (event: MouseEvent) => {
               <button @click.stop="handleDiscardChanges(file.path)" class="opacity-0 group-hover:opacity-100 p-1.5 hover:text-error text-xs transition-opacity rounded hover:bg-error/10">✕</button>
             </div>
           </div>
-          <div v-else-if="view === 'history'" class="space-y-1.5">
-            <div class="mb-2">
+          <div v-else-if="view === 'history'" class="flex-1 flex flex-col overflow-hidden">
+            <div class="px-3 py-2 border-b border-border bg-card/50">
                <input v-model="searchCommitQuery" placeholder="Search commits..." class="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-accent" />
             </div>
-            <div v-for="commit in filteredCommits" :key="commit.sha" 
-                 @click="selectedCommit = commit"
-                 class="p-3 rounded-lg border border-transparent hover:border-border cursor-pointer transition-safe"
-                 :class="{ 'border-accent bg-accent/5': selectedCommit?.sha === commit.sha }">
-              <div class="text-sm font-semibold truncate mb-1.5 flex items-center gap-2" :class="{ 'text-accent': selectedCommit?.sha === commit.sha }">
-                <span v-if="!commit.is_pushed" 
-                      class="text-success font-bold text-xs" title="Unpushed commit">↑</span>
-                {{ commit.message }}
+            <RecycleScroller
+              class="flex-1 overflow-auto p-3"
+              :items="filteredCommits"
+              :item-size="76"
+              key-field="sha"
+              v-slot="{ item }"
+            >
+              <div @click="selectedCommit = item"
+                   class="mb-1.5 p-3 rounded-lg border border-transparent hover:border-border cursor-pointer transition-safe bg-card/30"
+                   :class="{ 'border-accent bg-accent/5 shadow-sm': selectedCommit?.sha === item.sha }">
+                <div class="text-sm font-semibold truncate mb-1.5 flex items-center gap-2" :class="{ 'text-accent': selectedCommit?.sha === item.sha }">
+                  <span v-if="!item.is_pushed" 
+                        class="text-success font-bold text-xs" title="Unpushed commit">↑</span>
+                  {{ item.message }}
+                </div>
+                <div class="flex justify-between text-xs text-muted-foreground font-mono">
+                  <span>{{ item.sha.substring(0, 7) }}</span>
+                  <span>{{ new Date(item.timestamp * 1000).toLocaleDateString() }}</span>
+                </div>
               </div>
-              <div class="flex justify-between text-xs text-muted-foreground font-mono">
-                <span>{{ commit.sha.substring(0, 7) }}</span>
-                <span>{{ new Date(commit.timestamp * 1000).toLocaleDateString() }}</span>
-              </div>
-            </div>
+            </RecycleScroller>
           </div>
           <div v-else-if="view === 'stashes'" class="space-y-1.5">
             <div v-for="(stash, index) in stashes" :key="index" 
